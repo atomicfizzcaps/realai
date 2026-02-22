@@ -5,7 +5,7 @@ Run with: python test_realai.py
 """
 
 import sys
-from realai import RealAI, RealAIClient, ModelCapability
+from realai import RealAI, RealAIClient, ModelCapability, PROVIDER_CONFIGS, _detect_provider
 
 
 def test_model_initialization():
@@ -328,6 +328,92 @@ def test_memory_learning():
     print("✓ Memory learning test passed")
 
 
+def test_provider_detection():
+    """Test automatic provider detection from API key prefixes."""
+    print("Testing provider detection...")
+    assert _detect_provider("sk-abc123", None) == "openai"
+    assert _detect_provider("sk-proj-abc123", None) == "openai"
+    assert _detect_provider("sk-ant-abc123", None) == "anthropic"
+    assert _detect_provider("xai-abc123", None) == "grok"
+    assert _detect_provider("AIzaXYZ", None) == "gemini"
+    assert _detect_provider(None, None) is None
+    assert _detect_provider(None, "openai") == "openai"
+    assert _detect_provider("sk-abc123", "anthropic") == "anthropic"  # explicit wins
+    print("✓ Provider detection test passed")
+
+
+def test_provider_configs():
+    """Test that PROVIDER_CONFIGS contains all expected providers."""
+    print("Testing provider configs...")
+    for name in ("openai", "anthropic", "grok", "gemini"):
+        assert name in PROVIDER_CONFIGS, f"Missing provider: {name}"
+        cfg = PROVIDER_CONFIGS[name]
+        assert "base_url" in cfg
+        assert "default_model" in cfg
+        assert "api_format" in cfg
+    print("✓ Provider configs test passed")
+
+
+def test_realai_provider_init():
+    """Test RealAI initialises provider routing fields correctly."""
+    print("Testing RealAI provider init...")
+
+    # No key → no provider
+    m = RealAI()
+    assert m.provider is None
+    assert m._provider_model == "realai-2.0"
+
+    # OpenAI key auto-detection
+    m = RealAI(api_key="sk-testkey123")
+    assert m.provider == "openai"
+    assert m.base_url == PROVIDER_CONFIGS["openai"]["base_url"]
+    assert m._provider_model == PROVIDER_CONFIGS["openai"]["default_model"]
+
+    # Explicit model name preserved when not default
+    m = RealAI(api_key="sk-testkey123", model_name="gpt-4o")
+    assert m._provider_model == "gpt-4o"
+
+    # Anthropic key auto-detection
+    m = RealAI(api_key="sk-ant-testkey123")
+    assert m.provider == "anthropic"
+    assert m._api_format == "anthropic"
+
+    # Explicit provider override
+    m = RealAI(api_key="sk-testkey123", provider="grok")
+    assert m.provider == "grok"
+    assert m.base_url == PROVIDER_CONFIGS["grok"]["base_url"]
+
+    # Custom base_url override
+    m = RealAI(api_key="sk-testkey123", base_url="http://localhost:11434/v1")
+    assert m.base_url == "http://localhost:11434/v1"
+
+    print("✓ RealAI provider init test passed")
+
+
+def test_client_provider_params():
+    """Test RealAIClient forwards provider/base_url to its underlying model."""
+    print("Testing RealAIClient provider params...")
+    client = RealAIClient(api_key="sk-ant-testkey", provider="anthropic",
+                          base_url="https://custom.example.com")
+    assert client.model.provider == "anthropic"
+    assert client.model.base_url == "https://custom.example.com"
+    assert client.model._api_format == "anthropic"
+    print("✓ RealAIClient provider params test passed")
+
+
+def test_chat_fallback_without_key():
+    """Placeholder response is returned when no API key is configured."""
+    print("Testing chat fallback without key...")
+    client = RealAIClient()
+    response = client.chat.create(
+        messages=[{"role": "user", "content": "Hello"}]
+    )
+    assert 'id' in response
+    assert 'choices' in response
+    assert response['choices'][0]['message']['role'] == 'assistant'
+    print("✓ Chat fallback without key test passed")
+
+
 def run_all_tests():
     """Run all tests."""
     print("="*60)
@@ -356,7 +442,13 @@ def run_all_tests():
         test_plugin_system,
         test_memory_learning,
         test_model_capabilities,
-        test_model_info
+        test_model_info,
+        # Provider routing tests
+        test_provider_detection,
+        test_provider_configs,
+        test_realai_provider_init,
+        test_client_provider_params,
+        test_chat_fallback_without_key,
     ]
     
     passed = 0
