@@ -446,6 +446,36 @@ Or use the console script:
 realai
 ```
 
+## Desktop App (GUI / .exe)
+
+RealAI ships with a graphical launcher (`realai_gui.py`) that opens a window on
+start where you can enter and save your API keys for each provider (OpenAI,
+Anthropic, Grok, Gemini).  Keys are stored locally in `~/.realai/config.json`
+and are never uploaded anywhere.
+
+### Run the GUI directly
+
+```bash
+python realai_gui.py
+```
+
+### Build a standalone Windows .exe
+
+```bash
+# Install build tool (one-time)
+pip install pyinstaller
+
+# Build the executable
+pyinstaller realai_launcher.spec
+
+# Output: dist\RealAI.exe — double-click to launch
+```
+
+> **Tip:** tkinter is included with the official Python installer from
+> [python.org](https://www.python.org/downloads/).  If you installed Python
+> from the Microsoft Store, re-install from python.org and make sure the
+> "tcl/tk and IDLE" optional feature is selected.
+
 ## Architecture
 
 RealAI is designed with the following principles:

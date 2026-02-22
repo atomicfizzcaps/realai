@@ -30,6 +30,7 @@ MANIFEST
 # PyInstaller
 *.manifest
 *.spec
+!realai_launcher.spec
 
 # Installer logs
 pip-log.txt

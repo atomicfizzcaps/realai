@@ -73,6 +73,16 @@ _KEY_PREFIX_TO_PROVIDER: Dict[str, str] = {
     "AIza": "gemini",
 }
 
+#: Maps provider names to the environment variable used to pass their API key
+#: via the process environment (e.g. set by the GUI launcher).
+#: The insertion order defines the fallback priority used by the API server.
+PROVIDER_ENV_VARS: Dict[str, str] = {
+    "openai": "REALAI_OPENAI_API_KEY",
+    "anthropic": "REALAI_ANTHROPIC_API_KEY",
+    "grok": "REALAI_GROK_API_KEY",
+    "gemini": "REALAI_GEMINI_API_KEY",
+}
+
 
 def _detect_provider(api_key: Optional[str], provider: Optional[str]) -> Optional[str]:
     """Detect the AI provider from an explicit name or API key prefix.
