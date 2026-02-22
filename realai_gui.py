@@ -24,8 +24,11 @@ import subprocess
 import sys
 import threading
 import tkinter as tk
-from tkinter import messagebox
-from typing import Callable, Dict, Optional
+from tkinter import messagebox, scrolledtext
+from typing import Callable, Dict, List, Optional
+import urllib.request
+import urllib.error
+from copy import deepcopy
 
 from realai import PROVIDER_ENV_VARS
 
@@ -96,13 +99,17 @@ class RealAILauncher(tk.Tk):
     _BTN_START = "#1565c0"
     _BTN_STOP = "#c62828"
     _PAD = 14
+    _API_BASE_URL = "http://localhost:8000"
+    _DEFAULT_MODEL = "realai-2.0"
+    _API_TIMEOUT = 30
 
     def __init__(self):
         super().__init__()
         self.title("RealAI v2.0 \u2014 API Key Setup")
-        self.resizable(False, False)
+        self.resizable(True, True)
         self._server_proc: Optional[subprocess.Popen] = None
         self._entries: Dict[str, tk.Entry] = {}
+        self._chat_history: List[Dict[str, str]] = []
         self._build_ui()
         self._load_saved_keys()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -236,6 +243,83 @@ class RealAILauncher(tk.Tk):
             command=self._clear_keys,
         ).pack(side="right")
 
+        # Chat panel
+        self._build_chat_panel()
+
+    def _build_chat_panel(self) -> None:
+        """Build the chat interface panel."""
+        pad = self._PAD
+        
+        # Chat frame with border
+        chat_frame = tk.LabelFrame(
+            self,
+            text="\U0001f4ac Chat with RealAI",
+            font=("Segoe UI", 11, "bold"),
+            padx=pad,
+            pady=pad,
+            relief="groove",
+            borderwidth=2,
+        )
+        chat_frame.grid(row=4, column=0, sticky="nsew", padx=pad, pady=(0, pad))
+        self.rowconfigure(4, weight=1)
+        
+        # Conversation display (scrollable)
+        self._chat_display = scrolledtext.ScrolledText(
+            chat_frame,
+            wrap=tk.WORD,
+            width=70,
+            height=15,
+            font=("Consolas", 10),
+            state="disabled",
+            bg="#f5f5f5",
+            relief="sunken",
+            borderwidth=2,
+        )
+        self._chat_display.pack(fill="both", expand=True, pady=(0, pad // 2))
+        
+        # Input row frame
+        input_frame = tk.Frame(chat_frame)
+        input_frame.pack(fill="x", pady=(pad // 2, 0))
+        
+        # Message input
+        self._chat_input = tk.Entry(
+            input_frame,
+            font=("Segoe UI", 10),
+            state="disabled",
+        )
+        self._chat_input.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self._chat_input.bind("<Return>", lambda event: self._send_message())
+        
+        # Send button
+        self._send_btn = tk.Button(
+            input_frame,
+            text="\u27a4  Send",
+            width=10,
+            font=("Segoe UI", 10),
+            bg=self._BTN_START,
+            fg="white",
+            activebackground="#0d47a1",
+            relief="flat",
+            cursor="hand2",
+            command=self._send_message,
+            state="disabled",
+        )
+        self._send_btn.pack(side="left", padx=(0, 8))
+        
+        # Clear chat button
+        tk.Button(
+            input_frame,
+            text="\u21ba  Clear Chat",
+            width=12,
+            font=("Segoe UI", 10),
+            bg="#666",
+            fg="white",
+            activebackground="#444",
+            relief="flat",
+            cursor="hand2",
+            command=self._clear_chat,
+        ).pack(side="left")
+
     # ------------------------------------------------------------------
     # Key management
     # ------------------------------------------------------------------
@@ -279,6 +363,117 @@ class RealAILauncher(tk.Tk):
         self._status_var.set("Keys cleared \u2014 click Save to persist.")
 
     # ------------------------------------------------------------------
+    # Chat functionality
+    # ------------------------------------------------------------------
+
+    def _append_to_chat(self, text: str) -> None:
+        """Append text to the chat display (safe to call from any thread)."""
+        self._chat_display.config(state="normal")
+        self._chat_display.insert(tk.END, text + "\n\n")
+        self._chat_display.see(tk.END)
+        self._chat_display.config(state="disabled")
+
+    def _send_message(self) -> None:
+        """Send a chat message to the local API server."""
+        message = self._chat_input.get().strip()
+        if not message:
+            return
+        
+        # Clear input immediately
+        self._chat_input.delete(0, tk.END)
+        
+        # Append user message to display
+        self._append_to_chat(f"You: {message}")
+        
+        # Add to history
+        self._chat_history.append({"role": "user", "content": message})
+        
+        # Disable input while processing
+        self._chat_input.config(state="disabled")
+        self._send_btn.config(state="disabled")
+        
+        # Send request in background thread
+        threading.Thread(
+            target=self._send_chat_request,
+            args=(deepcopy(self._chat_history),),
+            daemon=True,
+        ).start()
+
+    def _send_chat_request(self, history: List[Dict[str, str]]) -> None:
+        """Background thread: POST to the API server and update UI."""
+        try:
+            # Prepare request
+            url = f"{self._API_BASE_URL}/v1/chat/completions"
+            data = json.dumps({
+                "messages": history,
+                "model": self._DEFAULT_MODEL
+            }, ensure_ascii=False).encode("utf-8")
+            
+            req = urllib.request.Request(
+                url,
+                data=data,
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            
+            # Send request
+            with urllib.request.urlopen(req, timeout=self._API_TIMEOUT) as response:
+                response_data = json.loads(response.read().decode("utf-8"))
+            
+            # Extract AI response with validation
+            if "choices" not in response_data or not response_data["choices"]:
+                raise KeyError("Response missing 'choices' field or empty choices array")
+            
+            choice = response_data["choices"][0]
+            if "message" not in choice or "content" not in choice["message"]:
+                raise KeyError("Response missing 'message' or 'content' field")
+            
+            ai_message = choice["message"]["content"]
+            
+            # Update history and display in main thread
+            self.after(0, self._on_chat_response, ai_message)
+            
+        except urllib.error.URLError as exc:
+            # Extract user-friendly error message
+            error_detail = str(exc)
+            if hasattr(exc, 'reason'):
+                error_detail = str(exc.reason)
+            error_msg = f"Cannot connect to API server: {error_detail}"
+            self.after(0, self._on_chat_error, error_msg)
+        except (KeyError, json.JSONDecodeError, IndexError) as exc:
+            error_msg = f"Invalid response format: {exc}"
+            self.after(0, self._on_chat_error, error_msg)
+        except Exception as exc:
+            error_msg = f"Unexpected error: {exc}"
+            self.after(0, self._on_chat_error, error_msg)
+
+    def _on_chat_response(self, ai_message: str) -> None:
+        """Handle successful AI response (main thread)."""
+        self._chat_history.append({"role": "assistant", "content": ai_message})
+        self._append_to_chat(f"AI: {ai_message}")
+        
+        # Re-enable input
+        if self._server_proc and self._server_proc.poll() is None:
+            self._chat_input.config(state="normal")
+            self._send_btn.config(state="normal")
+
+    def _on_chat_error(self, error_msg: str) -> None:
+        """Handle chat error (main thread)."""
+        self._append_to_chat(f"AI: [Error: {error_msg}]")
+        
+        # Re-enable input
+        if self._server_proc and self._server_proc.poll() is None:
+            self._chat_input.config(state="normal")
+            self._send_btn.config(state="normal")
+
+    def _clear_chat(self) -> None:
+        """Clear the chat history and display."""
+        self._chat_history.clear()
+        self._chat_display.config(state="normal")
+        self._chat_display.delete("1.0", tk.END)
+        self._chat_display.config(state="disabled")
+
+    # ------------------------------------------------------------------
     # Server control
     # ------------------------------------------------------------------
 
@@ -312,6 +507,11 @@ class RealAILauncher(tk.Tk):
             activebackground="#8b0000",
         )
         self._status_var.set("\U0001f680 API server started \u2014 http://localhost:8000")
+        
+        # Enable chat UI
+        self._chat_input.config(state="normal")
+        self._send_btn.config(state="normal")
+        
         threading.Thread(target=self._monitor_server, daemon=True).start()
 
     def _stop_server(self) -> None:
@@ -324,6 +524,10 @@ class RealAILauncher(tk.Tk):
             activebackground="#0d47a1",
         )
         self._status_var.set("\u23f9 API server stopped.")
+        
+        # Disable chat UI
+        self._chat_input.config(state="disabled")
+        self._send_btn.config(state="disabled")
 
     def _monitor_server(self) -> None:
         """Background thread: update the button when the server exits on its own."""
@@ -339,6 +543,10 @@ class RealAILauncher(tk.Tk):
             activebackground="#0d47a1",
         )
         self._status_var.set("\u26a0\ufe0f API server exited unexpectedly.")
+        
+        # Disable chat UI
+        self._chat_input.config(state="disabled")
+        self._send_btn.config(state="disabled")
 
     # ------------------------------------------------------------------
     # Window lifecycle
