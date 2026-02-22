@@ -35,6 +35,64 @@ except Exception:
     resource = None
 
 
+# ---------------------------------------------------------------------------
+# Provider configuration for real AI API routing
+# ---------------------------------------------------------------------------
+
+#: Configuration for supported external AI providers.
+PROVIDER_CONFIGS: Dict[str, Dict[str, str]] = {
+    "openai": {
+        "base_url": "https://api.openai.com/v1",
+        "default_model": "gpt-4o-mini",
+        "api_format": "openai",
+    },
+    "anthropic": {
+        "base_url": "https://api.anthropic.com",
+        "default_model": "claude-3-5-haiku-20241022",
+        "api_format": "anthropic",
+    },
+    "grok": {
+        "base_url": "https://api.x.ai/v1",
+        "default_model": "grok-beta",
+        "api_format": "openai",
+    },
+    "gemini": {
+        # Google exposes an OpenAI-compatible endpoint for Gemini models.
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "default_model": "gemini-1.5-flash",
+        "api_format": "openai",
+    },
+}
+
+#: Maps API key prefixes to provider names for auto-detection.
+_KEY_PREFIX_TO_PROVIDER: Dict[str, str] = {
+    "sk-ant-": "anthropic",
+    "sk-proj-": "openai",
+    "sk-": "openai",
+    "xai-": "grok",
+    "AIza": "gemini",
+}
+
+
+def _detect_provider(api_key: Optional[str], provider: Optional[str]) -> Optional[str]:
+    """Detect the AI provider from an explicit name or API key prefix.
+
+    Args:
+        api_key: The raw API key string (may be ``None``).
+        provider: An explicit provider name that overrides key-based detection.
+
+    Returns:
+        The lower-cased provider name, or ``None`` if it cannot be determined.
+    """
+    if provider:
+        return provider.lower()
+    if api_key:
+        for prefix, name in _KEY_PREFIX_TO_PROVIDER.items():
+            if api_key.startswith(prefix):
+                return name
+    return None
+
+
 class ModelCapability(Enum):
     """Supported capabilities of the RealAI model."""
     TEXT_GENERATION = "text_generation"
@@ -77,13 +135,22 @@ class RealAI:
         capabilities (List[ModelCapability]): List of supported capabilities
     """
     
-    def __init__(self, model_name: str = "realai-2.0", api_key: Optional[str] = None):
+    def __init__(self, model_name: str = "realai-2.0", api_key: Optional[str] = None,
+                 provider: Optional[str] = None, base_url: Optional[str] = None):
         """
         Initialize the RealAI model.
-        
+
         Args:
-            model_name (str): The name of the model to use
-            api_key (Optional[str]): API key for authentication (optional)
+            model_name (str): The name of the model to use. When a real provider is
+                configured and this is left at the default ``"realai-2.0"``, the
+                provider's default model will be used for API calls.
+            api_key (Optional[str]): API key for the provider (OpenAI, Anthropic, etc.).
+                When provided, requests are forwarded to the real AI service.
+            provider (Optional[str]): Explicit provider name (``"openai"``,
+                ``"anthropic"``, ``"grok"``, ``"gemini"``). If omitted the provider
+                is auto-detected from the *api_key* prefix.
+            base_url (Optional[str]): Override the provider's base URL. Useful for
+                self-hosted or proxy endpoints.
         """
         self.model_name = model_name
         self.version = "2.0.0"
@@ -91,7 +158,110 @@ class RealAI:
         self.capabilities = list(ModelCapability)
         # Registry of loaded plugins: name -> metadata
         self.plugins_registry: Dict[str, Any] = {}
-        
+
+        # Provider routing setup
+        self.provider = _detect_provider(api_key, provider)
+        cfg: Dict[str, str] = PROVIDER_CONFIGS.get(self.provider, {}) if self.provider else {}
+        self.base_url: str = base_url or cfg.get("base_url", "")
+        self._api_format: str = cfg.get("api_format", "openai")
+        # The actual model name sent to the remote provider.
+        # If the caller left model_name at the default, use the provider's default.
+        if self.provider and model_name == "realai-2.0":
+            self._provider_model: str = cfg.get("default_model", model_name)
+        else:
+            self._provider_model = model_name
+
+    # ------------------------------------------------------------------
+    # Private helpers for real provider API calls
+    # ------------------------------------------------------------------
+
+    def _call_openai_compat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        stream: bool = False,
+    ) -> Dict[str, Any]:
+        """Call an OpenAI-compatible chat/completions endpoint.
+
+        Works with OpenAI, xAI/Grok, Google Gemini (via its OpenAI-compatible
+        endpoint), and any other OpenAI-API-compatible service.
+        """
+        import requests as _requests
+
+        url = f"{self.base_url}/chat/completions"
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        payload: Dict[str, Any] = {
+            "model": self._provider_model,
+            "messages": messages,
+            "temperature": temperature,
+            "stream": stream,
+        }
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+
+        resp = _requests.post(url, json=payload, headers=headers, timeout=60)
+        resp.raise_for_status()
+        return resp.json()
+
+    def _call_anthropic(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+    ) -> Dict[str, Any]:
+        """Call the Anthropic Messages API and normalize the response to OpenAI format."""
+        import requests as _requests
+
+        system_parts = [m["content"] for m in messages if m.get("role") == "system"]
+        user_messages = [m for m in messages if m.get("role") != "system"]
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-api-key": self.api_key,
+            "anthropic-version": "2023-06-01",
+        }
+        payload: Dict[str, Any] = {
+            "model": self._provider_model,
+            "messages": user_messages,
+            "max_tokens": max_tokens or 1024,
+            "temperature": temperature,
+        }
+        if system_parts:
+            payload["system"] = "\n".join(system_parts)
+
+        resp = _requests.post(
+            f"{self.base_url}/v1/messages", json=payload, headers=headers, timeout=60
+        )
+        resp.raise_for_status()
+        data = resp.json()
+
+        content = data.get("content", [])
+        text = content[0].get("text", "") if content else ""
+        usage = data.get("usage", {})
+        prompt_tokens = usage.get("input_tokens", 0)
+        completion_tokens = usage.get("output_tokens", 0)
+
+        return {
+            "id": data.get("id", f"chatcmpl-{int(time.time())}"),
+            "object": "chat.completion",
+            "created": int(time.time()),
+            "model": self._provider_model,
+            "choices": [{
+                "index": 0,
+                "message": {"role": "assistant", "content": text},
+                "finish_reason": data.get("stop_reason", "stop"),
+            }],
+            "usage": {
+                "prompt_tokens": prompt_tokens,
+                "completion_tokens": completion_tokens,
+                "total_tokens": prompt_tokens + completion_tokens,
+            },
+        }
+
     def chat_completion(
         self,
         messages: List[Dict[str, str]],
@@ -101,17 +271,36 @@ class RealAI:
     ) -> Dict[str, Any]:
         """
         Generate a chat completion response (like OpenAI's ChatGPT).
-        
+
+        When an *api_key* and a recognised *provider* are configured the request
+        is forwarded to the real AI service (OpenAI, Anthropic, xAI/Grok,
+        Google Gemini, …).  Falls back to a placeholder response when no
+        provider is configured or the remote call fails.
+
         Args:
             messages (List[Dict[str, str]]): List of message objects with 'role' and 'content'
             temperature (float): Sampling temperature (0-2)
             max_tokens (Optional[int]): Maximum tokens to generate
             stream (bool): Whether to stream the response
-            
+
         Returns:
             Dict[str, Any]: Chat completion response
         """
-        response = {
+        # Route to the real provider when credentials are available.
+        if self.api_key and self.provider:
+            try:
+                if self._api_format == "anthropic":
+                    return self._call_anthropic(messages, temperature, max_tokens)
+                else:
+                    return self._call_openai_compat(messages, temperature, max_tokens, stream)
+            except Exception:
+                # Broad catch is intentional: we want to fall back gracefully
+                # for network errors, auth failures, missing `requests` package,
+                # etc., so the client remains functional without live credentials.
+                pass
+
+        # Placeholder response (no provider configured or call failed).
+        return {
             "id": f"chatcmpl-{int(time.time())}",
             "object": "chat.completion",
             "created": int(time.time()),
@@ -130,8 +319,7 @@ class RealAI:
                 "total_tokens": sum(len(msg.get("content", "").split()) for msg in messages) + 20
             }
         }
-        return response
-    
+
     def text_completion(
         self,
         prompt: str,
@@ -140,16 +328,49 @@ class RealAI:
     ) -> Dict[str, Any]:
         """
         Generate a text completion (like OpenAI's GPT-3).
-        
+
+        When an *api_key* and a recognised *provider* are configured the prompt
+        is forwarded to the real AI service via its chat/completions endpoint.
+        Falls back to a placeholder when no provider is configured or the
+        remote call fails.
+
         Args:
             prompt (str): The text prompt
             temperature (float): Sampling temperature (0-2)
             max_tokens (Optional[int]): Maximum tokens to generate
-            
+
         Returns:
             Dict[str, Any]: Text completion response
         """
-        response = {
+        # Route to the real provider when credentials are available.
+        # All modern providers expose a chat completions endpoint; wrap the
+        # prompt as a single user message for maximum compatibility.
+        if self.api_key and self.provider:
+            try:
+                messages = [{"role": "user", "content": prompt}]
+                if self._api_format == "anthropic":
+                    chat_resp = self._call_anthropic(messages, temperature, max_tokens)
+                else:
+                    chat_resp = self._call_openai_compat(messages, temperature, max_tokens)
+                # Re-shape chat response into text-completion format.
+                text = ""
+                if chat_resp.get("choices"):
+                    text = chat_resp["choices"][0].get("message", {}).get("content", "")
+                usage = chat_resp.get("usage", {})
+                return {
+                    "id": chat_resp.get("id", f"cmpl-{int(time.time())}"),
+                    "object": "text_completion",
+                    "created": chat_resp.get("created", int(time.time())),
+                    "model": self._provider_model,
+                    "choices": [{"text": text, "index": 0, "finish_reason": "stop"}],
+                    "usage": usage,
+                }
+            except Exception:
+                # Broad catch is intentional: fall back gracefully for network
+                # errors, auth failures, or missing dependencies.
+                pass
+
+        return {
             "id": f"cmpl-{int(time.time())}",
             "object": "text_completion",
             "created": int(time.time()),
@@ -165,8 +386,7 @@ class RealAI:
                 "total_tokens": len(prompt.split()) + 15
             }
         }
-        return response
-    
+
     def generate_image(
         self,
         prompt: str,
@@ -1034,28 +1254,40 @@ class RealAI:
 class RealAIClient:
     """
     OpenAI-compatible client for RealAI.
-    
+
     This client provides an interface similar to the OpenAI Python client,
-    making it easy to switch from OpenAI to RealAI.
+    making it easy to switch from OpenAI to RealAI or to proxy requests to a
+    real AI provider (ChatGPT, Claude, Grok, Gemini, …) by supplying the
+    appropriate *api_key*.
     """
-    
-    def __init__(self, api_key: Optional[str] = None):
+
+    def __init__(self, api_key: Optional[str] = None,
+                 provider: Optional[str] = None,
+                 base_url: Optional[str] = None):
         """
         Initialize the RealAI client.
-        
+
         Args:
-            api_key (Optional[str]): API key for authentication
+            api_key (Optional[str]): API key for the AI provider. When
+                provided, requests are forwarded to the real AI service.
+                The provider is auto-detected from the key prefix, or can
+                be set explicitly via *provider*.
+            provider (Optional[str]): Explicit provider name (``"openai"``,
+                ``"anthropic"``, ``"grok"``, ``"gemini"``).  Overrides
+                key-based auto-detection.
+            base_url (Optional[str]): Override the provider's base URL,
+                e.g. for a local proxy or self-hosted model.
         """
         self.api_key = api_key
-        self.model = RealAI(api_key=api_key)
-        
+        self.model = RealAI(api_key=api_key, provider=provider, base_url=base_url)
+
         # Create nested classes to match OpenAI structure
         self.chat = self.ChatCompletions(self.model)
         self.completions = self.Completions(self.model)
         self.images = self.Images(self.model)
         self.embeddings = self.Embeddings(self.model)
         self.audio = self.Audio(self.model)
-        
+
         # New limitless capabilities
         self.web = self.Web(self.model)
         self.tasks = self.Tasks(self.model)
@@ -1064,7 +1296,7 @@ class RealAIClient:
         self.therapy = self.Therapy(self.model)
         self.web3 = self.Web3(self.model)
         self.plugins = self.Plugins(self.model)
-    
+
     class ChatCompletions:
         """Chat completions interface."""
         def __init__(self, model: RealAI):
