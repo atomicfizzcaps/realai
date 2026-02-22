@@ -43,40 +43,69 @@ response = client.chat.create(
 print(response['choices'][0]['message']['content'])
 ```
 
-## Step 4: Launch the GUI (Optional)
+## Step 4: Launch the GUI — One .exe, Everything Included
 
-Run the graphical launcher to configure API keys and start the server:
+> **"Why so many files in the repo?"**  
+> The `.py` files are just source code.  You only need **one** output file
+> (`RealAI.exe`) to run the whole application.  Build it once, share it freely.
+
+### Run directly (no build step)
 
 ```bash
 python realai_gui.py
 ```
 
-To build a standalone Windows `.exe` (run these commands from inside the
-repository directory — e.g. `cd realai` — not from your home folder):
+### Build a single Windows .exe
+
+Run these commands from inside the repository directory (e.g. `cd realai`):
 
 ```bash
 pip install pyinstaller
 pyinstaller realai_launcher.spec
-# Output: dist\RealAI.exe
+# Output: dist\RealAI.exe  ← this one file is all you need
 ```
 
-## Step 5: Start API Server (Optional)
+The `.exe` bundles the GUI, the API server, and the core RealAI module —
+nothing else needs to be installed on the target machine.
 
-For REST API access:
+## Step 5: Start the API Server and Use the Built-in Chat
+
+### Via the GUI (easiest)
+
+1. Open `RealAI.exe` (or run `python realai_gui.py`).
+2. Enter at least one provider API key, then click **Save Keys**.
+3. Click **🚀 Start API Server** — the status bar shows `http://localhost:8000`.
+4. Type a message in the **Chat** panel at the bottom and press **Enter** (or click **➤ Send**).  
+   The built-in chat sends your messages to the local server and displays the AI response — no browser or extra tools needed.
+
+### Via the command line (headless / server machines)
 
 ```bash
+# Set your provider key
+export REALAI_OPENAI_API_KEY=sk-...
+
+# Start the server
 python api_server.py
 ```
 
 Then test with curl:
 
 ```bash
+curl http://localhost:8000/health
+
 curl -X POST http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "messages": [{"role": "user", "content": "Hello!"}]
   }'
 ```
+
+### Connect a third-party UI
+
+Any OpenAI-compatible front-end can point at the local server:
+
+- **Base URL**: `http://localhost:8000/v1`
+- **Model**: `realai-2.0`
 
 ## Step 6: Run Tests
 
