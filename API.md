@@ -23,7 +23,7 @@ RealAI provides a comprehensive, OpenAI-compatible API for various AI capabiliti
 ## Installation
 
 ```bash
-pip install -e git+https://github.com/Unwrenchable/realai.git#egg=realai
+pip install git+https://github.com/Unwrenchable/realai.git
 ```
 
 Or from source:
@@ -31,7 +31,7 @@ Or from source:
 ```bash
 git clone https://github.com/Unwrenchable/realai.git
 cd realai
-pip install -e .
+pip install -e .   # -e = editable/development mode; the dot (.) means "install from the current directory"
 ```
 
 ## Basic Usage
@@ -80,7 +80,7 @@ response = client.chat.create(
   "id": "chatcmpl-1234567890",
   "object": "chat.completion",
   "created": 1234567890,
-  "model": "realai-1.0",
+  "model": "realai-2.0",
   "choices": [{
     "index": 0,
     "message": {
@@ -271,7 +271,7 @@ Health check endpoint.
 ```json
 {
   "status": "healthy",
-  "model": "realai-1.0"
+  "model": "realai-2.0"
 }
 ```
 
@@ -284,7 +284,7 @@ List available models.
   "object": "list",
   "data": [
     {
-      "id": "realai-1.0",
+      "id": "realai-2.0",
       "object": "model",
       "created": 1708308000,
       "owned_by": "realai"

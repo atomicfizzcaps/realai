@@ -57,13 +57,13 @@ RealAI provides **17 comprehensive capabilities** in a single, unified model:
 ```bash
 git clone https://github.com/Unwrenchable/realai.git
 cd realai
-pip install -e .
+pip install -e .   # -e = editable/development mode; the dot (.) means "install from the current directory"
 ```
 
 ### Quick Install
 
 ```bash
-pip install -e git+https://github.com/Unwrenchable/realai.git#egg=realai
+pip install git+https://github.com/Unwrenchable/realai.git
 ```
 
 ## Quick Start
@@ -423,7 +423,7 @@ Direct access to the underlying model:
 ```python
 from realai import RealAI
 
-model = RealAI(model_name="realai-1.0")
+model = RealAI(model_name="realai-2.0")
 
 # Get model information
 info = model.get_model_info()
@@ -445,6 +445,36 @@ Or use the console script:
 ```bash
 realai
 ```
+
+## Desktop App (GUI / .exe)
+
+RealAI ships with a graphical launcher (`realai_gui.py`) that opens a window on
+start where you can enter and save your API keys for each provider (OpenAI,
+Anthropic, Grok, Gemini).  Keys are stored locally in `~/.realai/config.json`
+and are never uploaded anywhere.
+
+### Run the GUI directly
+
+```bash
+python realai_gui.py
+```
+
+### Build a standalone Windows .exe
+
+```bash
+# Install build tool (one-time)
+pip install pyinstaller
+
+# Build the executable
+pyinstaller realai_launcher.spec
+
+# Output: dist\RealAI.exe — double-click to launch
+```
+
+> **Tip:** tkinter is included with the official Python installer from
+> [python.org](https://www.python.org/downloads/).  If you installed Python
+> from the Microsoft Store, re-install from python.org and make sure the
+> "tcl/tk and IDLE" optional feature is selected.
 
 ## Architecture
 

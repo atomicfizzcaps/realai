@@ -5,7 +5,7 @@ Run with: python test_realai.py
 """
 
 import sys
-from realai import RealAI, RealAIClient, ModelCapability, PROVIDER_CONFIGS, _detect_provider
+from realai import RealAI, RealAIClient, ModelCapability, PROVIDER_CONFIGS, PROVIDER_ENV_VARS, _detect_provider
 
 
 def test_model_initialization():
@@ -354,6 +354,17 @@ def test_provider_configs():
     print("✓ Provider configs test passed")
 
 
+def test_provider_env_vars():
+    """Test that PROVIDER_ENV_VARS covers all providers in PROVIDER_CONFIGS."""
+    print("Testing provider env vars...")
+    for name in ("openai", "anthropic", "grok", "gemini"):
+        assert name in PROVIDER_ENV_VARS, f"Missing env var entry for: {name}"
+        env_var = PROVIDER_ENV_VARS[name]
+        assert env_var.startswith("REALAI_"), f"Unexpected env var name: {env_var}"
+        assert env_var.endswith("_API_KEY"), f"Unexpected env var name: {env_var}"
+    print("✓ Provider env vars test passed")
+
+
 def test_realai_provider_init():
     """Test RealAI initialises provider routing fields correctly."""
     print("Testing RealAI provider init...")
@@ -446,6 +457,7 @@ def run_all_tests():
         # Provider routing tests
         test_provider_detection,
         test_provider_configs,
+        test_provider_env_vars,
         test_realai_provider_init,
         test_client_provider_params,
         test_chat_fallback_without_key,

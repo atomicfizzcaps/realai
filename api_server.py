@@ -15,9 +15,10 @@ the provider explicitly, and ``X-Base-URL`` to override the endpoint.
 """
 
 import json
+import os
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
-from realai import RealAI, PROVIDER_CONFIGS
+from realai import RealAI, PROVIDER_CONFIGS, PROVIDER_ENV_VARS
 
 
 class RealAIAPIHandler(BaseHTTPRequestHandler):
@@ -43,11 +44,29 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
         Reads the API key from the ``Authorization: Bearer <key>`` header, the
         optional provider override from ``X-Provider``, and the optional base
         URL from ``X-Base-URL``.
+
+        When no ``Authorization`` header is present the method falls back to
+        ``REALAI_<PROVIDER>_API_KEY`` environment variables so the GUI launcher
+        can pass keys via the process environment without requiring callers to
+        set the header explicitly.
         """
         auth = self.headers.get("Authorization", "")
         api_key = auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
         provider = self.headers.get("X-Provider") or None
         base_url = self.headers.get("X-Base-URL") or None
+
+        # Fall back to environment variables set by the GUI launcher.
+        # Priority follows the insertion order of PROVIDER_ENV_VARS
+        # (openai → anthropic → grok → gemini); the first key found wins.
+        if not api_key:
+            for _provider, _env_var in PROVIDER_ENV_VARS.items():
+                _key = os.environ.get(_env_var, "")
+                if _key:
+                    api_key = _key
+                    if not provider:
+                        provider = _provider
+                    break
+
         return RealAI(model_name=model_name, api_key=api_key,
                       provider=provider, base_url=base_url)
 
