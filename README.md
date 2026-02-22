@@ -448,18 +448,26 @@ realai
 
 ## Desktop App (GUI / .exe)
 
-RealAI ships with a graphical launcher (`realai_gui.py`) that opens a window on
-start where you can enter and save your API keys for each provider (OpenAI,
-Anthropic, Grok, Gemini).  Keys are stored locally in `~/.realai/config.json`
-and are never uploaded anywhere.
+RealAI ships with a graphical launcher (`realai_gui.py`) that bundles
+everything in **one window**:
 
-### Run the GUI directly
+1. **API Key Setup** — enter and save keys for OpenAI, Anthropic, Grok, and Gemini.  Keys are stored locally in `~/.realai/config.json` and are never uploaded anywhere.
+2. **API Server Control** — start/stop the built-in HTTP server (runs at `http://localhost:8000`) with a single button click.
+3. **Built-in Chat** — once the server is running, chat with RealAI directly in the launcher window without needing any other tool.
+
+> **Why are there so many `.py` files in the repo?**  
+> Those are the *source code* files — you never need to ship them individually.
+> When you build with PyInstaller (see below) everything is compiled into a
+> **single `RealAI.exe`** file.  That one file is all you need to distribute or
+> run on Windows.
+
+### Run the GUI directly (no build step)
 
 ```bash
 python realai_gui.py
 ```
 
-### Build a standalone Windows .exe
+### Build a single standalone Windows .exe
 
 ```bash
 # Install build tool (one-time)
@@ -474,10 +482,71 @@ pyinstaller realai_launcher.spec
 # Output: dist\RealAI.exe — double-click to launch
 ```
 
+The resulting `dist\RealAI.exe` contains the GUI, the API server, and the core
+RealAI module — **one file, no Python installation required** on the target machine.
+
 > **Tip:** tkinter is included with the official Python installer from
 > [python.org](https://www.python.org/downloads/).  If you installed Python
 > from the Microsoft Store, re-install from python.org and make sure the
 > "tcl/tk and IDLE" optional feature is selected.
+
+## Running the API Server
+
+The API server (`api_server.py`) exposes an OpenAI-compatible REST API at
+`http://localhost:8000`.  Any app or tool that speaks the OpenAI API (curl,
+Python `openai` library, Postman, Open WebUI, …) can point at it instead of
+`api.openai.com`.
+
+### Option A — via the GUI (recommended)
+
+1. Launch `RealAI.exe` (or `python realai_gui.py`).
+2. Enter your API key(s) and click **Save Keys**.
+3. Click **🚀 Start API Server** — the status bar will show `http://localhost:8000`.
+4. Use the built-in **Chat** panel at the bottom to talk to RealAI immediately.
+
+### Option B — standalone (headless / server machines)
+
+```bash
+# Set at least one provider API key
+export REALAI_OPENAI_API_KEY=sk-...        # OpenAI
+# export REALAI_ANTHROPIC_API_KEY=sk-ant-... # Anthropic
+# export REALAI_GROK_API_KEY=xai-...        # xAI / Grok
+# export REALAI_GEMINI_API_KEY=AIza...      # Google Gemini
+
+# Start the server (default: port 8000, all interfaces)
+python api_server.py
+```
+
+Test it with curl:
+
+```bash
+curl http://localhost:8000/health
+
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages": [{"role": "user", "content": "Hello!"}]}'
+```
+
+### Available endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/health` | Health check |
+| GET | `/v1/models` | List models |
+| POST | `/v1/chat/completions` | Chat (OpenAI-compatible) |
+| POST | `/v1/completions` | Text completion |
+| POST | `/v1/images/generations` | Image generation |
+| POST | `/v1/embeddings` | Text embeddings |
+| POST | `/v1/audio/transcriptions` | Speech-to-text |
+| POST | `/v1/audio/speech` | Text-to-speech |
+
+### Connecting a third-party UI to the server
+
+Any OpenAI-compatible front-end (e.g. [Open WebUI](https://github.com/open-webui/open-webui), [ChatBot UI](https://github.com/mckaywrigley/chatbot-ui)) can connect to the local server by setting:
+
+- **API base URL**: `http://localhost:8000/v1`
+- **API key**: your provider key (or any string if running in placeholder mode)
+- **Model**: `realai-2.0`
 
 ## Architecture
 
