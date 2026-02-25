@@ -275,6 +275,8 @@ def test_code_execution():
     )
     assert 'execution_status' in response
     assert 'output' in response
+    assert response['execution_status'] == 'completed', f"Expected 'completed', got '{response['execution_status']}'"
+    assert response['output'].strip() == 'Hello', f"Expected 'Hello', got '{response['output'].strip()}'"
     print("✓ Code execution test passed")
 
 
@@ -461,6 +463,9 @@ def run_all_tests():
         test_realai_provider_init,
         test_client_provider_params,
         test_chat_fallback_without_key,
+        # Plugin real-world tests
+        test_local_plugin_loading,
+        test_load_all_plugins,
     ]
     
     passed = 0
