@@ -1137,14 +1137,15 @@ class RealAI:
                         r"^[\-\*•]\s*(.+)$", rec_text, re.MULTILINE
                     )
                     if rec_lines:
-                        recommendations = [r.strip() for r in rec_lines[:5]]
+                        # Keep at most the first 3 recommendations (matches system prompt)
+                        recommendations = [r.strip() for r in rec_lines[:3]]
                 else:
                     main_text = ai_content
 
                 ai_response_text = main_text
                 # Use first sentence of response as insight
                 first_sentence_match = re.search(
-                    r"^(.+?[.!?])\s", main_text + " "
+                    r"^(.+?[.!?])(?:\s|$)", main_text + " "
                 )
                 if first_sentence_match:
                     candidate = first_sentence_match.group(1).strip()
