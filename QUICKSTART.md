@@ -20,7 +20,7 @@ Try the built-in examples:
 python examples.py
 ```
 
-This will demonstrate all 9 capabilities of RealAI.
+This demonstrates 9 core capabilities in a quick-start flow.
 
 ## Step 3: Use in Your Code
 
@@ -124,7 +124,7 @@ python test_realai.py
 
 ## What Can You Do?
 
-RealAI provides 9 major capabilities:
+This quick-start walkthrough covers 9 core capabilities:
 
 1. **Chat** - Conversational AI
 2. **Text** - Text generation and completion
