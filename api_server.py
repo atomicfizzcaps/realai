@@ -184,6 +184,34 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
                 )
                 self._send_response(200, response)
 
+            elif parsed_path.path == '/v1/reasoning/chain':
+                response = model.chain_of_thought(
+                    problem=body.get('problem', ''),
+                    domain=body.get('domain')
+                )
+                self._send_response(200, response)
+
+            elif parsed_path.path == '/v1/synthesis/knowledge':
+                response = model.synthesize_knowledge(
+                    topics=body.get('topics', []),
+                    output_format=body.get('output_format', 'narrative')
+                )
+                self._send_response(200, response)
+
+            elif parsed_path.path == '/v1/reflection/analyze':
+                response = model.self_reflect(
+                    interaction_history=body.get('interaction_history'),
+                    focus=body.get('focus', 'general')
+                )
+                self._send_response(200, response)
+
+            elif parsed_path.path == '/v1/agents/orchestrate':
+                response = model.orchestrate_agents(
+                    task=body.get('task', ''),
+                    agent_roles=body.get('agent_roles')
+                )
+                self._send_response(200, response)
+
             else:
                 self._send_response(404, {"error": "Endpoint not found"})
 
@@ -222,6 +250,10 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
     print("  POST /v1/embeddings")
     print("  POST /v1/audio/transcriptions")
     print("  POST /v1/audio/speech")
+    print("  POST /v1/reasoning/chain")
+    print("  POST /v1/synthesis/knowledge")
+    print("  POST /v1/reflection/analyze")
+    print("  POST /v1/agents/orchestrate")
     print("\nPass your API key via:  Authorization: Bearer <key>")
     print("Override provider via:  X-Provider: openai|anthropic|grok|gemini|openrouter|mistral|together|deepseek|perplexity")
     print("Override base URL via:  X-Base-URL: https://...")

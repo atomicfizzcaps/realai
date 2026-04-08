@@ -36,6 +36,11 @@ def test_client_initialization():
     assert hasattr(client, 'therapy')
     assert hasattr(client, 'web3')
     assert hasattr(client, 'plugins')
+    # Next-generation capability sub-clients
+    assert hasattr(client, 'reasoning')
+    assert hasattr(client, 'synthesis')
+    assert hasattr(client, 'reflection')
+    assert hasattr(client, 'agents')
     print("✓ Client initialization test passed")
 
 
@@ -171,6 +176,11 @@ def test_model_capabilities():
     assert 'business_planning' in capabilities
     assert 'therapy_counseling' in capabilities
     assert 'web3_integration' in capabilities
+    # Next-generation capabilities
+    assert 'self_reflection' in capabilities
+    assert 'chain_of_thought' in capabilities
+    assert 'knowledge_synthesis' in capabilities
+    assert 'multi_agent' in capabilities
     print("✓ Model capabilities test passed")
 
 
@@ -456,6 +466,162 @@ def test_chat_fallback_without_key():
     print("✓ Chat fallback without key test passed")
 
 
+def test_chain_of_thought():
+    """Test chain-of-thought reasoning capability."""
+    print("Testing chain-of-thought reasoning...")
+    model = RealAI()
+    response = model.chain_of_thought(
+        problem="If all cats are mammals and all mammals breathe air, do cats breathe air?",
+        domain="logic"
+    )
+    assert response['status'] == 'success'
+    assert 'steps' in response
+    assert isinstance(response['steps'], list)
+    assert len(response['steps']) > 0
+    assert 'answer' in response
+    assert 'confidence' in response
+    print("✓ Chain-of-thought reasoning test passed")
+
+
+def test_chain_of_thought_client():
+    """Test chain-of-thought via RealAIClient.reasoning."""
+    print("Testing chain-of-thought via client...")
+    client = RealAIClient()
+    response = client.reasoning.chain(
+        problem="What is 2 + 2?",
+        domain="math"
+    )
+    assert response['status'] == 'success'
+    assert 'steps' in response
+    assert 'answer' in response
+    print("✓ Chain-of-thought client test passed")
+
+
+def test_synthesize_knowledge():
+    """Test knowledge synthesis capability."""
+    print("Testing knowledge synthesis...")
+    model = RealAI()
+    response = model.synthesize_knowledge(
+        topics=["artificial intelligence", "neuroscience"],
+        output_format="bullets"
+    )
+    assert response['status'] == 'success'
+    assert 'topics' in response
+    assert 'per_topic' in response
+    assert 'synthesis' in response
+    assert 'connections' in response
+    assert isinstance(response['connections'], list)
+    print("✓ Knowledge synthesis test passed")
+
+
+def test_synthesize_knowledge_client():
+    """Test knowledge synthesis via RealAIClient.synthesis."""
+    print("Testing knowledge synthesis via client...")
+    client = RealAIClient()
+    response = client.synthesis.combine(
+        topics=["climate change", "renewable energy", "economics"]
+    )
+    assert response['status'] == 'success'
+    assert 'synthesis' in response
+    assert len(response['topics']) == 3
+    print("✓ Knowledge synthesis client test passed")
+
+
+def test_self_reflect():
+    """Test self-reflection capability."""
+    print("Testing self-reflection...")
+    model = RealAI()
+    history = [
+        {"role": "user", "content": "What is the capital of France?"},
+        {"role": "assistant", "content": "The capital of France is Paris."},
+    ]
+    response = model.self_reflect(interaction_history=history, focus="accuracy")
+    assert response['status'] == 'success'
+    assert 'strengths' in response
+    assert isinstance(response['strengths'], list)
+    assert 'weaknesses' in response
+    assert isinstance(response['weaknesses'], list)
+    assert 'improvements' in response
+    assert isinstance(response['improvements'], list)
+    assert 'score' in response
+    print("✓ Self-reflection test passed")
+
+
+def test_self_reflect_client():
+    """Test self-reflection via RealAIClient.reflection."""
+    print("Testing self-reflection via client...")
+    client = RealAIClient()
+    response = client.reflection.improve(focus="efficiency")
+    assert response['status'] == 'success'
+    assert 'improvements' in response
+    print("✓ Self-reflection client test passed")
+
+
+def test_orchestrate_agents():
+    """Test multi-agent orchestration capability."""
+    print("Testing multi-agent orchestration...")
+    model = RealAI()
+    response = model.orchestrate_agents(
+        task="Evaluate the pros and cons of electric vehicles",
+        agent_roles=["researcher", "analyst", "critic"]
+    )
+    assert response['status'] == 'success'
+    assert 'task' in response
+    assert 'agents_used' in response
+    assert 'agent_results' in response
+    assert isinstance(response['agent_results'], dict)
+    assert 'final_output' in response
+    assert len(response['agent_results']) == 3
+    print("✓ Multi-agent orchestration test passed")
+
+
+def test_orchestrate_agents_client():
+    """Test multi-agent orchestration via RealAIClient.agents."""
+    print("Testing multi-agent orchestration via client...")
+    client = RealAIClient()
+    response = client.agents.run(
+        task="Summarise the key trends in renewable energy"
+    )
+    assert response['status'] == 'success'
+    assert 'final_output' in response
+    assert 'agents_used' in response
+    print("✓ Multi-agent orchestration client test passed")
+
+
+def test_generate_speech():
+    """Test generate_speech convenience method."""
+    print("Testing generate_speech...")
+    model = RealAI()
+    response = model.generate_speech("Hello, world!")
+    assert 'url' in response
+    assert 'spoken' in response
+    assert 'audio_url' in response
+    print("✓ generate_speech test passed")
+
+
+def test_new_capabilities_in_model():
+    """Test that all next-gen capabilities appear in model.get_capabilities()."""
+    print("Testing next-gen capabilities in model...")
+    model = RealAI()
+    caps = model.get_capabilities()
+    assert 'self_reflection' in caps
+    assert 'chain_of_thought' in caps
+    assert 'knowledge_synthesis' in caps
+    assert 'multi_agent' in caps
+    print("✓ Next-gen capabilities in model test passed")
+
+
+def test_new_client_attributes():
+    """Test that RealAIClient exposes the new sub-client attributes."""
+    print("Testing new client attributes...")
+    client = RealAIClient()
+    assert hasattr(client, 'reasoning')
+    assert hasattr(client, 'synthesis')
+    assert hasattr(client, 'reflection')
+    assert hasattr(client, 'agents')
+    print("✓ New client attributes test passed")
+
+
 def run_all_tests():
     """Run all tests."""
     print("="*60)
@@ -495,6 +661,18 @@ def run_all_tests():
         # Plugin real-world tests
         test_local_plugin_loading,
         test_load_all_plugins,
+        # Next-generation capability tests
+        test_chain_of_thought,
+        test_chain_of_thought_client,
+        test_synthesize_knowledge,
+        test_synthesize_knowledge_client,
+        test_self_reflect,
+        test_self_reflect_client,
+        test_orchestrate_agents,
+        test_orchestrate_agents_client,
+        test_generate_speech,
+        test_new_capabilities_in_model,
+        test_new_client_attributes,
     ]
     
     passed = 0

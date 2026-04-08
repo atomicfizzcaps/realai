@@ -18,6 +18,10 @@ RealAI provides a comprehensive, OpenAI-compatible API for various AI capabiliti
   - [Audio Transcription](#audio-transcription)
   - [Audio Generation](#audio-generation)
   - [Translation](#translation)
+  - [Chain-of-Thought Reasoning](#chain-of-thought-reasoning)
+  - [Knowledge Synthesis](#knowledge-synthesis)
+  - [Self-Reflection](#self-reflection)
+  - [Multi-Agent Orchestration](#multi-agent-orchestration)
 - [REST API Server](#rest-api-server)
 
 ## Installation
@@ -250,11 +254,93 @@ response = client.model.translate(
 )
 ```
 
+### Chain-of-Thought Reasoning
+
+Solve a complex problem with explicit, step-by-step reasoning.
+
+**Method:** `client.reasoning.solve(problem, domain=None)` or `client.reasoning.chain(problem, domain=None)`
+
+**Parameters:**
+- `problem` (str, required): The question or problem to reason through
+- `domain` (str, optional): Domain hint — e.g. `"math"`, `"logic"`, `"science"`
+
+**Example:**
+```python
+result = client.reasoning.solve(
+    problem="If all mammals breathe air, and whales are mammals, do whales breathe air?",
+    domain="logic"
+)
+print(result['steps'])    # list of reasoning steps
+print(result['answer'])   # final conclusion
+print(result['confidence'])
+```
+
+### Knowledge Synthesis
+
+Combine research from multiple topics into unified cross-domain insights.
+
+**Method:** `client.synthesis.combine(topics, output_format="narrative")` or `client.synthesis.cross_domain(topics, output_format)`
+
+**Parameters:**
+- `topics` (List[str], required): List of topics to synthesise (1–10)
+- `output_format` (str, optional): `"narrative"` (default) or `"bullets"`
+
+**Example:**
+```python
+result = client.synthesis.combine(
+    topics=["artificial intelligence", "neuroscience", "ethics"],
+    output_format="bullets"
+)
+print(result['synthesis'])    # unified insight text
+print(result['connections'])  # list of cross-domain links
+```
+
+### Self-Reflection
+
+Analyse past interactions and surface targeted improvement recommendations.
+
+**Method:** `client.reflection.analyze(interaction_history=None, focus="general")` or `client.reflection.improve(focus)`
+
+**Parameters:**
+- `interaction_history` (List[Dict], optional): List of `{"role": ..., "content": ...}` messages
+- `focus` (str, optional): `"general"` (default), `"accuracy"`, `"empathy"`, `"efficiency"`
+
+**Example:**
+```python
+history = [
+    {"role": "user", "content": "Summarise climate change."},
+    {"role": "assistant", "content": "Climate change refers to ..."},
+]
+result = client.reflection.analyze(interaction_history=history, focus="accuracy")
+print(result['strengths'])    # list of strengths identified
+print(result['weaknesses'])   # list of weaknesses
+print(result['improvements']) # actionable improvement suggestions
+print(result['score'])        # overall quality score 0-1
+```
+
+### Multi-Agent Orchestration
+
+Coordinate multiple specialised AI agents (planner, researcher, critic, synthesizer) to tackle a complex task.
+
+**Method:** `client.agents.run(task, agent_roles=None)` or `client.agents.coordinate(task, roles=None)`
+
+**Parameters:**
+- `task` (str, required): High-level task description
+- `agent_roles` (List[str], optional): Specialist roles to engage. Defaults to `["planner", "researcher", "critic", "synthesizer"]`. Available roles: `planner`, `researcher`, `analyst`, `critic`, `writer`, `synthesizer`
+
+**Example:**
+```python
+result = client.agents.run(
+    task="Evaluate the pros and cons of remote work",
+    agent_roles=["researcher", "analyst", "critic"]
+)
+print(result['agent_results'])  # dict of role -> agent output
+print(result['final_output'])   # coordinator-synthesised answer
+```
+
 ## REST API Server
 
 RealAI includes a built-in HTTP server that provides an OpenAI-compatible REST API.
-
-### Starting the Server
 
 ```bash
 python api_server.py
@@ -362,6 +448,53 @@ Generate speech.
 {
   "input": "Hello from RealAI",
   "voice": "alloy"
+}
+```
+
+#### POST /v1/reasoning/chain
+Solve a problem with explicit chain-of-thought reasoning.
+
+**Request Body:**
+```json
+{
+  "problem": "If all mammals breathe air, and whales are mammals, do whales breathe air?",
+  "domain": "logic"
+}
+```
+
+#### POST /v1/synthesis/knowledge
+Synthesise cross-domain knowledge from multiple topics.
+
+**Request Body:**
+```json
+{
+  "topics": ["artificial intelligence", "neuroscience", "psychology"],
+  "output_format": "narrative"
+}
+```
+
+#### POST /v1/reflection/analyze
+Analyse interaction history and return self-improvement insights.
+
+**Request Body:**
+```json
+{
+  "interaction_history": [
+    {"role": "user", "content": "What is 2+2?"},
+    {"role": "assistant", "content": "4"}
+  ],
+  "focus": "accuracy"
+}
+```
+
+#### POST /v1/agents/orchestrate
+Coordinate multiple specialised AI agents to solve a complex task.
+
+**Request Body:**
+```json
+{
+  "task": "Evaluate the pros and cons of electric vehicles",
+  "agent_roles": ["researcher", "analyst", "critic", "synthesizer"]
 }
 ```
 
