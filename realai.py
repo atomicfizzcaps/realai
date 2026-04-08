@@ -516,6 +516,9 @@ class RealAI:
                     "response_format": response_format,
                 }
                 if image_url:
+                    # Keep both keys for broader provider compatibility:
+                    # some APIs expect `image_url`, others expect `image`.
+                    payload["image_url"] = image_url
                     payload["image"] = image_url
 
                 resp = _requests.post(
