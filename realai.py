@@ -1741,7 +1741,7 @@ class RealAI:
         task: str,
         agent_roles: Optional[List[str]] = None
     ) -> Dict[str, Any]:
-        """Coordinate multiple specialised virtual agents to tackle a complex task.
+        """Coordinate multiple specialized virtual agents to tackle a complex task.
 
         Each "agent" is a focused AI call with a tailored system prompt.  The
         results are then synthesised into a final answer by a coordinator call.
