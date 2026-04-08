@@ -12,7 +12,7 @@ RealAI is the limitless AI model that can truly do anything. It's designed to be
 
 ## 🌟 Features
 
-RealAI provides **17 comprehensive capabilities** in a single, unified model:
+RealAI provides **21 comprehensive capabilities** in a single, unified model:
 
 ### Core AI Capabilities
 - 💬 **Chat Completion** - Conversational AI like ChatGPT
@@ -35,6 +35,12 @@ RealAI provides **17 comprehensive capabilities** in a single, unified model:
 - 🔌 **Plugin System** - Extend RealAI anywhere with unlimited plugins
 - 🧠 **Learning & Memory** - Learns and adapts from every interaction
 
+### Next-Generation AI Capabilities 🚀
+- 🔗 **Chain-of-Thought Reasoning** - Transparent, step-by-step problem solving
+- 🔬 **Knowledge Synthesis** - Cross-domain insight generation combining web research + AI analysis
+- 🪞 **Self-Reflection** - Meta-level self-analysis and targeted improvement recommendations
+- 🤖 **Multi-Agent Orchestration** - Coordinate specialised AI agents (planner, researcher, critic, synthesizer) for complex tasks
+
 ## 🚀 What Makes RealAI Special?
 
 **RealAI has NO limits.** It can:
@@ -47,6 +53,10 @@ RealAI provides **17 comprehensive capabilities** in a single, unified model:
 - 💻 Code AND execute anything
 - 🔌 Be implemented anywhere via plugins
 - 🧠 Learn from every interaction
+- 🔗 Reason step-by-step with full transparency
+- 🔬 Synthesise insights across multiple knowledge domains
+- 🪞 Self-reflect and continuously self-improve
+- 🤖 Coordinate multiple specialist AI agents for complex tasks
 
 **The sky is literally the limit!**
 
