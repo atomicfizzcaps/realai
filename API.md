@@ -405,6 +405,12 @@ List available models.
 }
 ```
 
+#### GET /v1/capabilities
+Return the canonical capability catalog grouped by domain.
+
+#### GET /v1/providers/capabilities?provider=<name>
+Return capability support/limitations for a provider.
+
 #### POST /v1/chat/completions
 Create a chat completion.
 
@@ -418,6 +424,10 @@ Create a chat completion.
   "max_tokens": 150
 }
 ```
+
+All core generation/research endpoints include a `realai_meta` object in the
+response with canonical contract metadata (capability, modality, provider,
+model, timestamp, and contract version).
 
 #### POST /v1/completions
 Create a text completion.

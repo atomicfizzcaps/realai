@@ -270,6 +270,20 @@ research = client.web.research(
 
 print(research['findings'])
 print(research['sources'])
+print(research['citations'])   # citation metadata
+print(research['freshness'])   # live | cached | fallback
+```
+
+### Personas 🎭
+
+```python
+# List and switch persona profiles
+print(client.personas.list())
+client.personas.set("analyst")
+
+# Persona influences chat style and appears in response metadata
+reply = client.chat.create(messages=[{"role": "user", "content": "Give me a launch plan"}])
+print(reply["realai_meta"]["persona"])
 ```
 
 ### Task Automation 🛒
@@ -563,9 +577,12 @@ curl -X POST http://localhost:8000/v1/chat/completions \
 |--------|------|-------------|
 | GET | `/health` | Health check |
 | GET | `/v1/models` | List models |
+| GET | `/v1/capabilities` | Capability catalog grouped by domain |
+| GET | `/v1/providers/capabilities?provider=<name>` | Provider capability map |
 | POST | `/v1/chat/completions` | Chat (OpenAI-compatible) |
 | POST | `/v1/completions` | Text completion |
 | POST | `/v1/images/generations` | Image generation |
+| POST | `/v1/videos/generations` | Video generation |
 | POST | `/v1/embeddings` | Text embeddings |
 | POST | `/v1/audio/transcriptions` | Speech-to-text |
 | POST | `/v1/audio/speech` | Text-to-speech |
