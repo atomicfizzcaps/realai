@@ -16,7 +16,7 @@ def app(environ, start_response):
         start_response("405 Method Not Allowed", headers)
         return [body]
 
-    if method == "GET" and path == "/health":
+    if path == "/health":
         body = b'{"status":"healthy","model":"realai-2.0"}'
         headers = [("Content-Type", "application/json"), ("Content-Length", str(len(body)))]
         start_response("200 OK", headers)
