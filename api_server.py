@@ -116,6 +116,15 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
             response["id"] = model_id
             self._send_response(200, response)
 
+        elif parsed_path.path == '/v1/capabilities':
+            model = self._get_model()
+            self._send_response(200, model.get_capability_catalog())
+
+        elif parsed_path.path == '/v1/providers/capabilities':
+            model = self._get_model()
+            provider = parse_qs(parsed_path.query).get("provider", [None])[0]
+            self._send_response(200, model.get_provider_capabilities(provider=provider))
+
         elif parsed_path.path == '/health':
             self._send_response(200, {"status": "healthy", "model": "realai-2.0"})
 
@@ -257,6 +266,8 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
     print("  GET  /health")
     print("  GET  /v1/models")
     print("  GET  /v1/models/<model-id>")
+    print("  GET  /v1/capabilities")
+    print("  GET  /v1/providers/capabilities?provider=<name>")
     print("  POST /v1/chat/completions")
     print("  POST /v1/completions")
     print("  POST /v1/images/generations")

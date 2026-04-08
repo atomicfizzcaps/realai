@@ -37,6 +37,7 @@ def test_client_initialization():
     assert hasattr(client, 'therapy')
     assert hasattr(client, 'web3')
     assert hasattr(client, 'plugins')
+    assert hasattr(client, 'personas')
     # Next-generation capability sub-clients
     assert hasattr(client, 'reasoning')
     assert hasattr(client, 'synthesis')
@@ -224,7 +225,38 @@ def test_web_research():
     assert 'query' in response
     assert 'findings' in response
     assert 'sources' in response
+    assert 'citations' in response
+    assert 'freshness' in response
     print("✓ Web research test passed")
+
+
+def test_capability_catalog_and_provider_capabilities():
+    """Test unified capability catalog and provider capability map access."""
+    print("Testing capability catalog/provider capabilities...")
+    model = RealAI(api_key="sk-testkey123")
+    catalog = model.get_capability_catalog()
+    assert 'capabilities' in catalog
+    assert 'domains' in catalog
+    assert catalog['count'] >= 17
+    provider_caps = model.get_provider_capabilities()
+    assert provider_caps['provider'] == 'openai'
+    assert 'supported_capabilities' in provider_caps
+    assert 'unsupported_capabilities' in provider_caps
+    print("✓ Capability catalog/provider capabilities test passed")
+
+
+def test_persona_profiles_and_chat_metadata():
+    """Test persona switching and canonical response metadata."""
+    print("Testing personas and response metadata...")
+    model = RealAI()
+    personas = model.get_personas()
+    assert 'balanced' in personas
+    model.set_persona("analyst")
+    response = model.chat_completion(messages=[{"role": "user", "content": "Hello"}])
+    assert 'realai_meta' in response
+    assert response['realai_meta']['capability'] == 'text_generation'
+    assert response['realai_meta']['persona'] == 'analyst'
+    print("✓ Personas and response metadata test passed")
 
 
 def test_task_automation():
@@ -589,6 +621,8 @@ def test_orchestrate_agents():
     assert 'agent_results' in response
     assert isinstance(response['agent_results'], dict)
     assert 'final_output' in response
+    assert 'execution_plan' in response
+    assert 'verification' in response
     assert len(response['agent_results']) == 3
     print("✓ Multi-agent orchestration test passed")
 
@@ -662,6 +696,8 @@ def run_all_tests():
         test_audio_generation,
         test_translation,
         test_web_research,
+        test_capability_catalog_and_provider_capabilities,
+        test_persona_profiles_and_chat_metadata,
         test_task_automation,
         test_voice_interaction,
         test_business_planning,
