@@ -5,11 +5,8 @@ This file exists so platforms like Vercel can detect a standard Python
 entrypoint (`main.py`) and import a callable named `app`.
 """
 
-from api_server import run_server
-
-
 def app(environ, start_response):
-    """Minimal WSGI app for serverless platform health checks."""
+    """Minimal WSGI app for serverless health and default status routes."""
     path = environ.get("PATH_INFO", "/")
     method = environ.get("REQUEST_METHOD", "GET")
 
@@ -26,4 +23,6 @@ def app(environ, start_response):
 
 
 if __name__ == "__main__":
+    from api_server import run_server
+
     run_server()
