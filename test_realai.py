@@ -580,7 +580,7 @@ def test_orchestrate_agents_client():
     print("Testing multi-agent orchestration via client...")
     client = RealAIClient()
     response = client.agents.run(
-        task="Summarise the key trends in renewable energy"
+        task="Summarize the key trends in renewable energy"
     )
     assert response['status'] == 'success'
     assert 'final_output' in response

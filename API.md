@@ -279,10 +279,10 @@ print(result['confidence'])
 
 Combine research from multiple topics into unified cross-domain insights.
 
-**Method:** `client.synthesis.combine(topics, output_format="narrative")` or `client.synthesis.cross_domain(topics, output_format)`
+**Method:** `client.synthesis.combine(topics, output_format="narrative")` or `client.synthesis.cross_domain(topics, output_format="narrative")`
 
 **Parameters:**
-- `topics` (List[str], required): List of topics to synthesise (1–10)
+- `topics` (List[str], required): List of topics to synthesize (1–10)
 - `output_format` (str, optional): `"narrative"` (default) or `"bullets"`
 
 **Example:**
@@ -308,7 +308,7 @@ Analyse past interactions and surface targeted improvement recommendations.
 **Example:**
 ```python
 history = [
-    {"role": "user", "content": "Summarise climate change."},
+    {"role": "user", "content": "Summarize climate change."},
     {"role": "assistant", "content": "Climate change refers to ..."},
 ]
 result = client.reflection.analyze(interaction_history=history, focus="accuracy")
