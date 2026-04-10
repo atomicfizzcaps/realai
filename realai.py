@@ -1244,7 +1244,7 @@ class RealAI:
                 from bs4 import BeautifulSoup as _BS
 
                 _session = _requests.Session()
-                _session.headers.update({"User-Agent": "RealAI/2.0 (+https://example.com)"})
+                _session.headers.update({"User-Agent": "RealAI/2.0 (+https://github.com/Unwrenchable/realai)"})
 
                 # Parse numbered steps from the plan
                 step_lines = re.findall(r"^\s*\d+[.)]\s*(.+)$", plan_text, re.MULTILINE)
@@ -1346,6 +1346,7 @@ class RealAI:
                     _RECORD_SECONDS = 5
 
                     _pa = pyaudio.PyAudio()
+                    _sample_width = _pa.get_sample_size(_FORMAT)
                     _stream = _pa.open(
                         format=_FORMAT,
                         channels=_CHANNELS,
@@ -1364,7 +1365,7 @@ class RealAI:
                         _wav_path = _tmp.name
                     with wave.open(_wav_path, "wb") as _wf:
                         _wf.setnchannels(_CHANNELS)
-                        _wf.setsampwidth(_pa.get_sample_size(_FORMAT))
+                        _wf.setsampwidth(_sample_width)
                         _wf.setframerate(_RATE)
                         _wf.writeframes(b"".join(_frames))
 
