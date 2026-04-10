@@ -1,8 +1,10 @@
 # RealAI Requirements
-# Minimal runtime dependencies for real integrations
+# Core packages – required for the web UI and chat completions (Vercel-compatible)
 requests>=2.28.0
 beautifulsoup4>=4.12.0
-sentence-transformers>=2.2.2
-pyttsx3>=2.90
-vosk>=0.3.45
-web3>=6.0.0
+
+# Optional features – install manually for local / full-featured use:
+#   pip install sentence-transformers  # semantic search / embeddings
+#   pip install pyttsx3                # text-to-speech
+#   pip install vosk                   # speech recognition
+#   pip install web3                   # blockchain / Web3 integration
