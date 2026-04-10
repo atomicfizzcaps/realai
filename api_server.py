@@ -286,6 +286,7 @@ function loadModels() {
       select.appendChild(opt);
     });
     var saved = localStorage.getItem(MODEL_STORE) || 'realai-2.0';
+    if ([].slice.call(select.options).some(function(o){ return o.value === saved; })) {
       select.value = saved;
     }
   }).catch(function(){});
