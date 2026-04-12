@@ -69,7 +69,6 @@ export async function chatCommand(options: ChatOptions): Promise<void> {
   const rl = readline.createInterface({
     input: process.stdin,
     output: process.stdout,
-    terminal: false,
   });
 
   const askQuestion = (): void => {
