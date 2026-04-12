@@ -19,7 +19,8 @@ export async function whoamiCommand(): Promise<void> {
     console.log(`  ${chalk.dim("Model:   ")} ${chalk.white(config.model)}`);
   }
   if (config.apiKey) {
-    console.log(`  ${chalk.dim("API Key: ")} ${chalk.white(maskApiKey(config.apiKey))}`);
+    const masked = maskApiKey(config.apiKey);
+    console.log(`  ${chalk.dim("API Key: ")} ${chalk.white(masked)}`);
   }
   if (config.baseUrl) {
     console.log(`  ${chalk.dim("Base URL:")} ${chalk.white(config.baseUrl)}`);
