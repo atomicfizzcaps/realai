@@ -2656,6 +2656,17 @@ class RealAI:
             # check below and we fall through to the cloud fallback.
             safe_audio_file = os.path.realpath(os.path.abspath(audio_file))
 
+            # Enforce an allowlist of recognised audio extensions so that
+            # user-supplied paths cannot be used to read arbitrary files
+            # (e.g. /etc/passwd or other sensitive paths on the server).
+            _ALLOWED_AUDIO_EXT = {'.wav', '.mp3', '.flac', '.ogg', '.m4a', '.mp4', '.webm', '.aac'}
+            _ext = os.path.splitext(safe_audio_file)[1].lower()
+            if _ext not in _ALLOWED_AUDIO_EXT:
+                raise ValueError(
+                    f"Unsupported audio file extension {_ext!r}. "
+                    f"Allowed: {', '.join(sorted(_ALLOWED_AUDIO_EXT))}"
+                )
+
             # If audio_file is a URL or missing, fall back
             if not os.path.isfile(safe_audio_file):
                 raise FileNotFoundError("Audio file not found for local ASR")

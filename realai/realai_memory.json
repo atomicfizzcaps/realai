@@ -15,6 +15,14 @@
       },
       "patterns": [],
       "adaptations": []
+    },
+    {
+      "timestamp": 1777636121,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
     }
   ],
   "patterns": {},
