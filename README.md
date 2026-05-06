@@ -109,6 +109,24 @@ pip install git+https://github.com/Unwrenchable/realai.git
 
 ## Quick Start
 
+## Repository Structure
+
+```text
+realai/
+  server/      # structured inference server entrypoints
+  models/      # model registry + placeholder weight directories
+  training/    # extraction, dataset, fine-tune, and eval pipeline helpers
+  sdk/python/  # Python SDK facade
+  cli/         # structured CLI entrypoints
+  datasets/    # raw and processed training artifacts
+```
+
+## Structured Server Entry Points
+
+- `python -m realai.server.app` starts the minimal structured inference server with no extra dependencies.
+- If you prefer an ASGI stack, install `uvicorn` and point it at `realai.server.app:app`.
+- The structured server exposes `POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /health`, and `GET /metrics`.
+
 ```python
 from realai import RealAIClient
 
