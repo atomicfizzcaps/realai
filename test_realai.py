@@ -143,6 +143,116 @@ def test_embeddings():
     print("✓ Embeddings test passed")
 
 
+def test_structured_server_routes():
+    """Test the structured server router and registry."""
+    print("Testing structured server routes...")
+    from realai.server.config import get_model_config, list_models
+    from realai.server.router import dispatch_request
+
+    models = list_models()
+    assert 'realai-1.0' in models
+    config = get_model_config('realai-1.0')
+    assert config['id'] == 'realai-1.0'
+    assert config['backend'] == 'vllm'
+    assert config['path'] == 'meta-llama/Meta-Llama-3-8B-Instruct'
+
+    status, response, content_type = dispatch_request(
+        'POST',
+        '/v1/chat/completions',
+        {
+            'model': 'realai-1.0',
+            'messages': [{'role': 'user', 'content': 'Hello structured server'}],
+            'temperature': 0.2,
+            'max_tokens': 32,
+        }
+    )
+    assert status == 200
+    assert content_type == 'application/json'
+    assert 'choices' in response
+
+    status, response, content_type = dispatch_request(
+        'POST',
+        '/v1/embeddings',
+        {'model': 'realai-embed', 'input': ['hello', 'world']}
+    )
+    assert status == 200
+    assert len(response['data']) == 2
+
+    status, response, content_type = dispatch_request('GET', '/metrics')
+    assert status == 200
+    assert 'realai_requests_total' in response
+    print("✓ Structured server routes test passed")
+
+
+def test_structured_training_pipeline():
+    """Test training dataset extraction helpers."""
+    print("Testing structured training pipeline...")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from realai.training.build_datasets import build_dataset_bundle
+    from realai.training.eval import evaluate_instruction_dataset
+    from realai.training.finetune import build_finetune_plan
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        processed_path = tmp_path / 'processed'
+        processed_path.mkdir()
+        (processed_path / 'instructions.jsonl').write_text(
+            json.dumps({
+                'messages': [
+                    {'role': 'user', 'content': 'Explain vector databases.'},
+                    {'role': 'assistant', 'content': 'A vector database stores embeddings.'},
+                ]
+            }) + '\n',
+            encoding='utf-8'
+        )
+
+        manifest = build_dataset_bundle(str(processed_path), str(processed_path))
+        assert manifest['datasets']['train']['rows'] == 1
+        assert manifest['datasets']['val']['rows'] == 0
+
+        evaluation = evaluate_instruction_dataset(manifest['datasets']['train']['path'])
+        assert evaluation['examples'] == 1
+
+        plan = build_finetune_plan(data_dir=str(processed_path))
+        assert plan['status'] == 'ready'
+    print("✓ Structured training pipeline test passed")
+
+
+def test_structured_sdk_facade():
+    """Test the structured SDK facade."""
+    print("Testing structured SDK facade...")
+    import threading
+    from wsgiref.simple_server import make_server
+
+    from realai.sdk.python.realai_client import RealAIClient as SDKRealAIClient, create_client
+    from realai.server.app import wsgi_app
+
+    server = make_server('127.0.0.1', 0, wsgi_app)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+    try:
+        client = create_client(api_url='http://127.0.0.1:{0}'.format(server.server_port))
+        assert isinstance(client, SDKRealAIClient)
+        response = client.chat(
+            'realai-1.0',
+            [{'role': 'user', 'content': 'Hello from sdk'}],
+            temperature=0.2,
+            max_tokens=32,
+        )
+        assert 'choices' in response
+
+        embeddings = client.embeddings('realai-embed', ['Hello from sdk'])
+        assert len(embeddings['data']) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+    print("✓ Structured SDK facade test passed")
+
+
 def test_audio_transcription():
     """Test audio transcription."""
     print("Testing audio transcription...")
@@ -2862,6 +2972,9 @@ def run_all_tests():
         test_video_generation,
         test_code_generation,
         test_embeddings,
+        test_structured_server_routes,
+        test_structured_training_pipeline,
+        test_structured_sdk_facade,
         test_audio_transcription,
         test_audio_generation,
         test_translation,
