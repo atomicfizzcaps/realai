@@ -2208,6 +2208,258 @@ def test_api_config_default_models():
     print("✓ api_config default models test passed")
 
 
+def test_api_config_default_models():
+    """Test get_default_models returns a well-formed model list."""
+    print("Testing api_config default models...")
+    config = _load_api_config()
+    now = int(time.time())
+    models = config.get_default_models(now)
+    assert isinstance(models, list)
+    assert len(models) >= 1
+    model = models[0]
+    assert "id" in model
+    assert "object" in model
+    assert model["object"] == "model"
+    assert model["created"] == now
+    assert "owned_by" in model
+    print("✓ api_config default models test passed")
+
+
+# ============================================================================
+# AI Training and Quality System Tests
+# ============================================================================
+
+def test_agent_evals():
+    """Test agent_evals capability runs and returns evaluation results."""
+    print("Testing agent_evals...")
+    model = RealAI()
+    result = model.agent_evals(
+        task_name="chat_quality",
+        golden_examples=[
+            {"input": "Hello", "expected": "hello", "actual": "Hello there!"},
+            {"input": "Bye", "expected": "bye", "actual": "Goodbye!"}
+        ],
+        metrics=["accuracy", "latency"]
+    )
+    assert result["status"] == "success"
+    assert "scores" in result
+    assert "accuracy" in result["scores"]
+    assert "regression_detected" in result
+    assert result["realai_meta"]["capability"] == ModelCapability.AGENT_EVALS.value
+    print("✓ agent_evals test passed")
+
+
+def test_agent_evals_client():
+    """Test client.training.run_evals() convenience method."""
+    print("Testing client.training.run_evals...")
+    client = RealAIClient()
+    result = client.training.run_evals(
+        task_name="grounding_quality",
+        metrics=["accuracy", "hallucination_rate"]
+    )
+    assert result["status"] == "success"
+    assert "scores" in result
+    print("✓ client.training.run_evals test passed")
+
+
+def test_feedback_learning():
+    """Test feedback_learning capability processes feedback items."""
+    print("Testing feedback_learning...")
+    model = RealAI()
+    result = model.feedback_learning(
+        feedback_items=[
+            {"text": "Wrong answer about capital", "label": "negative", "correction": "Paris is the capital of France"},
+            {"text": "Great response", "label": "positive"}
+        ],
+        policy_target="accuracy"
+    )
+    assert result["status"] == "success"
+    assert result["feedback_processed"] == 2
+    assert "failure_clusters" in result
+    assert "policy_updates" in result
+    assert result["realai_meta"]["capability"] == ModelCapability.FEEDBACK_LEARNING.value
+    print("✓ feedback_learning test passed")
+
+
+def test_feedback_learning_client():
+    """Test client.training.process_feedback() convenience method."""
+    print("Testing client.training.process_feedback...")
+    client = RealAIClient()
+    result = client.training.process_feedback(
+        feedback_items=[{"text": "Slow response", "label": "negative"}],
+        policy_target="latency"
+    )
+    assert result["status"] == "success"
+    assert result["feedback_processed"] == 1
+    print("✓ client.training.process_feedback test passed")
+
+
+def test_grounding():
+    """Test grounding capability returns retrieval-grounded response."""
+    print("Testing grounding...")
+    model = RealAI()
+    result = model.grounding(
+        query="What is the capital of France?",
+        sources=[
+            {"text": "France is a country in Europe. Paris is its capital city.", "url": "https://example.com/france"},
+            {"text": "Germany has Berlin as its capital.", "url": "https://example.com/germany"}
+        ],
+        citation_mode="inline"
+    )
+    assert result["status"] == "success"
+    assert "grounded_answer" in result
+    assert "citations" in result
+    assert "hallucination_risk" in result
+    assert result["realai_meta"]["capability"] == ModelCapability.GROUNDING.value
+    print("✓ grounding test passed")
+
+
+def test_grounding_client():
+    """Test client.training.ground_response() convenience method."""
+    print("Testing client.training.ground_response...")
+    client = RealAIClient()
+    result = client.training.ground_response(
+        query="What is machine learning?",
+        sources=[{"text": "Machine learning is a subset of AI.", "url": "https://example.com/ml"}]
+    )
+    assert result["status"] == "success"
+    assert result["sources_used"] >= 1
+    print("✓ client.training.ground_response test passed")
+
+
+def test_agent_observability():
+    """Test agent_observability capability returns observability snapshot."""
+    print("Testing agent_observability...")
+    model = RealAI()
+    result = model.agent_observability(
+        trace_config={"enabled": True, "sampling_rate": 0.5, "latency_budget_ms": 2000},
+        metrics_config={"latency": True, "cost": True, "drift": True}
+    )
+    assert result["status"] == "success"
+    assert "observability_snapshot" in result
+    snapshot = result["observability_snapshot"]
+    assert snapshot["tracing_enabled"] is True
+    assert "latency_p50_ms" in snapshot
+    assert "output_drift_detected" in snapshot
+    assert result["realai_meta"]["capability"] == ModelCapability.AGENT_OBSERVABILITY.value
+    print("✓ agent_observability test passed")
+
+
+def test_agent_observability_client():
+    """Test client.training.setup_observability() convenience method."""
+    print("Testing client.training.setup_observability...")
+    client = RealAIClient()
+    result = client.training.setup_observability(
+        metrics_config={"latency": True, "cost": False}
+    )
+    assert result["status"] == "success"
+    assert "structured_log_fields" in result
+    print("✓ client.training.setup_observability test passed")
+
+
+def test_ai_incident_response():
+    """Test ai_incident_response capability triages incidents correctly."""
+    print("Testing ai_incident_response...")
+    model = RealAI()
+    result = model.ai_incident_response(
+        incident_type="hallucination",
+        impact_scope="user",
+        severity="high"
+    )
+    assert result["status"] == "success"
+    assert result["incident_type"] == "hallucination"
+    assert result["severity"] == "high"
+    assert "immediate_actions" in result
+    assert len(result["immediate_actions"]) > 0
+    assert "postmortem_items" in result
+    assert result["rollback_required"] is True
+    assert result["realai_meta"]["capability"] == ModelCapability.AI_INCIDENT_RESPONSE.value
+    print("✓ ai_incident_response test passed")
+
+
+def test_ai_incident_response_client():
+    """Test client.training.respond_to_incident() convenience method."""
+    print("Testing client.training.respond_to_incident...")
+    client = RealAIClient()
+    result = client.training.respond_to_incident(
+        incident_type="latency_spike",
+        severity="medium"
+    )
+    assert result["status"] == "success"
+    assert "immediate_actions" in result
+    print("✓ client.training.respond_to_incident test passed")
+
+
+def test_expansion_coordination():
+    """Test expansion_coordination orders roadmap items by dependencies."""
+    print("Testing expansion_coordination...")
+    model = RealAI()
+    result = model.expansion_coordination(
+        roadmap_items=["grounding", "evals", "feedback_loop", "observability"],
+        dependencies=[
+            {"from": "grounding", "to": "evals"},
+            {"from": "evals", "to": "feedback_loop"}
+        ]
+    )
+    assert result["status"] == "success"
+    assert result["total_items"] == 4
+    assert "phases" in result
+    assert len(result["phases"]) >= 1
+    assert result["realai_meta"]["capability"] == ModelCapability.EXPANSION_COORDINATION.value
+    print("✓ expansion_coordination test passed")
+
+
+def test_expansion_coordination_client():
+    """Test client.training.coordinate_expansion() convenience method."""
+    print("Testing client.training.coordinate_expansion...")
+    client = RealAIClient()
+    result = client.training.coordinate_expansion(
+        roadmap_items=["capability_A", "capability_B"],
+        dependencies=[]
+    )
+    assert result["status"] == "success"
+    assert result["total_items"] == 2
+    print("✓ client.training.coordinate_expansion test passed")
+
+
+def test_training_agents_in_registry():
+    """Test that training agent types are in the AgentRegistry."""
+    print("Testing training agents in registry...")
+    registry = AgentRegistry()
+    training_agent_ids = [
+        "agent-evals-engineer",
+        "feedback-learning-engineer",
+        "grounding-engineer",
+        "agent-observability-engineer",
+        "ai-incident-responder",
+        "expansion-coordinator"
+    ]
+    for agent_id in training_agent_ids:
+        agent = registry.get_agent(agent_id)
+        assert agent is not None, f"Agent '{agent_id}' not found in registry"
+        assert agent.id == agent_id
+        assert len(agent.capabilities) > 0
+    print("✓ training agents in registry test passed")
+
+
+def test_training_capabilities_in_domain_map():
+    """Test that all training capabilities are in CAPABILITY_DOMAIN_MAP."""
+    print("Testing training capabilities in domain map...")
+    from realai import CAPABILITY_DOMAIN_MAP
+    training_caps = [
+        ModelCapability.AGENT_EVALS,
+        ModelCapability.FEEDBACK_LEARNING,
+        ModelCapability.GROUNDING,
+        ModelCapability.AGENT_OBSERVABILITY,
+        ModelCapability.AI_INCIDENT_RESPONSE,
+        ModelCapability.EXPANSION_COORDINATION,
+    ]
+    for cap in training_caps:
+        assert cap in CAPABILITY_DOMAIN_MAP, f"{cap} missing from CAPABILITY_DOMAIN_MAP"
+        assert CAPABILITY_DOMAIN_MAP[cap] == "training"
+    print("✓ training capabilities in domain map test passed")
+
+
 def run_all_tests():
     """Run all tests."""
     print("="*60)
@@ -2361,6 +2613,21 @@ def run_all_tests():
         test_api_config_default_keys,
         test_api_config_env_keys,
         test_api_config_default_models,
+        # AI Training and Quality System Tests
+        test_agent_evals,
+        test_agent_evals_client,
+        test_feedback_learning,
+        test_feedback_learning_client,
+        test_grounding,
+        test_grounding_client,
+        test_agent_observability,
+        test_agent_observability_client,
+        test_ai_incident_response,
+        test_ai_incident_response_client,
+        test_expansion_coordination,
+        test_expansion_coordination_client,
+        test_training_agents_in_registry,
+        test_training_capabilities_in_domain_map,
     ]
     
     passed = 0
