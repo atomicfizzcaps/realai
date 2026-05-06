@@ -24,7 +24,12 @@ export async function sendMessage(
     body: JSON.stringify(payload),
   });
 
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Backend returned a non-JSON response (HTTP ${res.status}).`);
+  }
 
   if (!res.ok) {
     throw new Error(
@@ -32,6 +37,8 @@ export async function sendMessage(
     );
   }
 
+  // Support both OpenAI chat-completions format (choices[0].message.content)
+  // and legacy completions format (choices[0].text).
   const content: string | undefined =
     data?.choices?.[0]?.message?.content ??
     data?.choices?.[0]?.text;
