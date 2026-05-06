@@ -2208,23 +2208,6 @@ def test_api_config_default_models():
     print("✓ api_config default models test passed")
 
 
-def test_api_config_default_models():
-    """Test get_default_models returns a well-formed model list."""
-    print("Testing api_config default models...")
-    config = _load_api_config()
-    now = int(time.time())
-    models = config.get_default_models(now)
-    assert isinstance(models, list)
-    assert len(models) >= 1
-    model = models[0]
-    assert "id" in model
-    assert "object" in model
-    assert model["object"] == "model"
-    assert model["created"] == now
-    assert "owned_by" in model
-    print("✓ api_config default models test passed")
-
-
 # ============================================================================
 # AI Training and Quality System Tests
 # ============================================================================

@@ -501,15 +501,6 @@ class AgentRegistry:
         })
         return f"Deployment Strategy:\n{causal}"
 
-    def _deployment_task(self, task: str, **kwargs) -> str:
-        """Handle deployment agent tasks."""
-        # Use causal reasoning for deployment planning
-        causal = self._call_realai_method("causal_reasoning", {
-            "scenario": f"Deployment impact analysis: {task}",
-            "variables": ["code_changes", "infrastructure", "user_impact"]
-        })
-        return f"Deployment Strategy:\n{causal}"
-
     def _agent_evals_task(self, task: str, **kwargs) -> str:
         """Handle agent evals engineer tasks."""
         result = self._call_realai_method("agent_evals", {
