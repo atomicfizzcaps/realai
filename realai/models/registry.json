@@ -1,0 +1,34 @@
+{
+  "realai-2.0": {
+    "type": "chat",
+    "backend": "realai",
+    "provider": "local",
+    "model_name": "realai-2.0",
+    "path": "realai/models/realai-1.0",
+    "context_length": 128000
+  },
+  "realai-1.0": {
+    "type": "chat",
+    "backend": "realai",
+    "provider": "local",
+    "model_name": "realai-1.0-base",
+    "path": "realai/models/realai-1.0",
+    "context_length": 32768
+  },
+  "realai-overseer": {
+    "type": "chat",
+    "backend": "realai",
+    "provider": "local",
+    "model_name": "realai-1.0-agentic",
+    "path": "realai/models/realai-overseer",
+    "context_length": 128000
+  },
+  "realai-embed": {
+    "type": "embedding",
+    "backend": "realai",
+    "provider": "local",
+    "model_name": "realai-embeddings",
+    "embedding_model": "realai-embeddings",
+    "path": "realai/models/realai-embed"
+  }
+}

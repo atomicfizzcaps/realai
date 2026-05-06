@@ -143,6 +143,102 @@ def test_embeddings():
     print("✓ Embeddings test passed")
 
 
+def test_structured_server_routes():
+    """Test the structured server router and registry."""
+    print("Testing structured server routes...")
+    from realai.server.config import get_model_config, list_models
+    from realai.server.router import dispatch_request
+
+    models = list_models()
+    assert 'realai-2.0' in models
+    config = get_model_config('realai-2.0')
+    assert config['id'] == 'realai-2.0'
+    assert config['path'].endswith('realai/models/realai-1.0')
+
+    status, response, content_type = dispatch_request(
+        'POST',
+        '/v1/chat/completions',
+        {
+            'model': 'realai-2.0',
+            'messages': [{'role': 'user', 'content': 'Hello structured server'}],
+            'temperature': 0.2,
+            'max_tokens': 32,
+        }
+    )
+    assert status == 200
+    assert content_type == 'application/json'
+    assert 'choices' in response
+
+    status, response, content_type = dispatch_request(
+        'POST',
+        '/v1/embeddings',
+        {'model': 'realai-embed', 'input': ['hello', 'world']}
+    )
+    assert status == 200
+    assert len(response['data']) == 2
+
+    status, response, content_type = dispatch_request('GET', '/metrics')
+    assert status == 200
+    assert 'realai_chat_requests_total' in response
+    print("✓ Structured server routes test passed")
+
+
+def test_structured_training_pipeline():
+    """Test training dataset extraction helpers."""
+    print("Testing structured training pipeline...")
+    import json
+    import tempfile
+    from pathlib import Path
+
+    from realai.training.build_datasets import build_dataset_bundle
+    from realai.training.eval import evaluate_instruction_dataset
+    from realai.training.finetune import build_finetune_plan
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_path = Path(tmpdir)
+        raw_path = tmp_path / 'raw'
+        processed_path = tmp_path / 'processed'
+        raw_path.mkdir()
+
+        (raw_path / 'agent_logs.jsonl').write_text(
+            json.dumps({'prompt': 'Hello', 'response': 'Hi there', 'source': 'log'}) + '\n',
+            encoding='utf-8'
+        )
+        (raw_path / 'memory_summary.json').write_text(
+            json.dumps({'content': 'Long memory', 'summary': 'Short memory'}),
+            encoding='utf-8'
+        )
+        (raw_path / 'tool_trace.json').write_text(
+            json.dumps([{'task': 'Trace task', 'result': 'Trace result'}]),
+            encoding='utf-8'
+        )
+        (raw_path / 'change.patch').write_text('diff --git a/file.py b/file.py', encoding='utf-8')
+
+        manifest = build_dataset_bundle(str(raw_path), str(processed_path))
+        assert manifest['datasets']['instructions']['rows'] == 2
+        assert manifest['datasets']['code_pairs']['rows'] == 1
+        assert manifest['datasets']['memory_pairs']['rows'] == 1
+
+        evaluation = evaluate_instruction_dataset(manifest['datasets']['instructions']['path'])
+        assert evaluation['examples'] == 2
+
+        plan = build_finetune_plan(dataset_path=manifest['datasets']['instructions']['path'])
+        assert plan['status'] == 'ready'
+    print("✓ Structured training pipeline test passed")
+
+
+def test_structured_sdk_facade():
+    """Test the structured SDK facade."""
+    print("Testing structured SDK facade...")
+    from realai.sdk.python.realai_client import RealAIClient as SDKRealAIClient, create_client
+
+    client = create_client()
+    assert isinstance(client, SDKRealAIClient)
+    response = client.chat.create(messages=[{'role': 'user', 'content': 'Hello from sdk'}])
+    assert 'choices' in response
+    print("✓ Structured SDK facade test passed")
+
+
 def test_audio_transcription():
     """Test audio transcription."""
     print("Testing audio transcription...")
@@ -2862,6 +2958,9 @@ def run_all_tests():
         test_video_generation,
         test_code_generation,
         test_embeddings,
+        test_structured_server_routes,
+        test_structured_training_pipeline,
+        test_structured_sdk_facade,
         test_audio_transcription,
         test_audio_generation,
         test_translation,
