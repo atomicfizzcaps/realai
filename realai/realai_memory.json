@@ -95,6 +95,30 @@
       },
       "patterns": [],
       "adaptations": []
+    },
+    {
+      "timestamp": 1778063417,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
+    },
+    {
+      "timestamp": 1778063481,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
+    },
+    {
+      "timestamp": 1778063564,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
     }
   ],
   "patterns": {},
