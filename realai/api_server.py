@@ -1059,7 +1059,7 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
                 if parallel:
                     with _cf.ThreadPoolExecutor(max_workers=min(len(steps), 8)) as ex:
                         futures = [ex.submit(_run_step, s) for s in steps]
-                        results = [f.result() for f in _cf.as_completed(futures)]
+                        results = [f.result() for f in futures]  # preserve submission order
                 else:
                     for step in steps:
                         results.append(_run_step(step))
