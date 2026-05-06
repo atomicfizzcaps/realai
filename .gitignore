@@ -16,6 +16,21 @@ eggs/
 .eggs/
 lib/
 lib64/
+!realai-frontend/src/lib/
+
+# Python runtime state
+realai_memory.db
+realai_memory.json
+*.db
+
+# Build / packaging artifacts
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.pyc
+__pycache__/
 parts/
 sdist/
 var/
