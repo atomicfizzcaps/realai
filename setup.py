@@ -13,7 +13,9 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Unwrenchable/realai",
-    py_modules=["realai"],
+    packages=find_packages(),
+    py_modules=["api_server", "local_models", "main"],
+    include_package_data=True,
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -32,6 +34,8 @@ setup(
     entry_points={
         "console_scripts": [
             "realai=realai:main",
+            "realai-cli=realai.cli.realai_cli:main",
+            "realai-server=realai.server.app:main",
         ],
     },
 )
