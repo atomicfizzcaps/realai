@@ -1,33 +1,50 @@
 """Command-line entrypoint for structured RealAI workflows."""
 
 import argparse
+import os
 
-from realai import main as demo_main
-from realai.server.app import main as serve_main
+try:
+    import click
+except ImportError:
+    click = None
 
-
-def build_parser():
-    """Build the RealAI CLI argument parser."""
-    parser = argparse.ArgumentParser(description='RealAI command-line interface.')
-    subcommands = parser.add_subparsers(dest='command')
-
-    serve_parser = subcommands.add_parser('serve', help='Run the structured inference server.')
-    serve_parser.add_argument('--host', default='0.0.0.0')
-    serve_parser.add_argument('--port', default=8000, type=int)
-
-    subcommands.add_parser('demo', help='Run the existing RealAI demo flow.')
-    return parser
+from realai.sdk.python.realai_client import RealAIClient
 
 
-def main(argv=None):
-    """CLI entrypoint."""
-    parser = build_parser()
-    args = parser.parse_args(argv)
-    if args.command == 'serve':
-        serve_main(host=args.host, port=args.port)
+def _chat_command(prompt, model, api_url):
+    client = RealAIClient(api_url=api_url)
+    response = client.chat(model=model, messages=[{'role': 'user', 'content': prompt}])
+    print(response['choices'][0]['message']['content'])
+
+
+if click is not None:
+    @click.group()
+    def cli():
+        """RealAI CLI."""
+
+    @cli.command()
+    @click.argument('prompt')
+    @click.option('--model', default='realai-1.0')
+    @click.option('--api-url', envvar='REALAI_API_URL', default='http://localhost:8000')
+    def chat(prompt, model, api_url):
+        """Send a prompt to the RealAI server."""
+        _chat_command(prompt, model, api_url)
+
+    def main(argv=None):
+        """CLI entrypoint."""
+        cli.main(args=argv, standalone_mode=False)
         return 0
-    demo_main()
-    return 0
+else:
+    def main(argv=None):
+        """Fallback CLI entrypoint when click is unavailable."""
+        parser = argparse.ArgumentParser(description='RealAI command-line interface.')
+        parser.add_argument('command', choices=['chat'])
+        parser.add_argument('prompt')
+        parser.add_argument('--model', default='realai-1.0')
+        parser.add_argument('--api-url', default=os.environ.get('REALAI_API_URL', 'http://localhost:8000'))
+        args = parser.parse_args(argv)
+        _chat_command(args.prompt, args.model, args.api_url)
+        return 0
 
 
 if __name__ == '__main__':

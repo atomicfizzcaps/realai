@@ -1,54 +1,83 @@
 """Inference helpers for the structured RealAI server."""
 
-import logging
-import os
-from typing import Any, Dict, List, Optional
+import time
 
 from realai import RealAI
 
-from .logging import log_event
-from .metrics import increment
+from .config import get_model_config
+from .logging_utils import setup_logging
+from .metrics import LATENCY, REQUESTS, TOKENS
+
+logger = setup_logging()
+_vllm_engines = {}
 
 
-def _build_model(config):
-    """Instantiate a RealAI model from registry config."""
-    api_key_env = config.get('api_key_env')
-    api_key = os.environ.get(api_key_env) if api_key_env else None
-    base_url_env = config.get('base_url_env')
-    base_url = os.environ.get(base_url_env) if base_url_env else config.get('base_url')
-    provider = config.get('provider')
-    backend = config.get('backend', 'realai')
-    use_local = backend in ('hf', 'local', 'realai')
-    if use_local and not provider:
-        provider = 'local'
-    return RealAI(
-        model_name=config.get('model_name', config.get('id', 'realai-2.0')),
-        api_key=api_key,
-        provider=provider,
-        base_url=base_url,
-        use_local=use_local,
-    )
+def _build_fallback_model(model_name):
+    """Instantiate the legacy RealAI core as a fallback."""
+    return RealAI(model_name=model_name, provider='local', use_local=True)
 
 
-def chat_completion(config, messages, temperature=0.2, max_tokens=1024):
-    """Run a chat completion using a configured model."""
-    increment('realai_chat_requests_total')
+def _get_vllm_engine(cfg):
+    """Load a vLLM engine lazily when optional dependencies are available."""
     try:
-        model = _build_model(config)
-        response = model.chat_completion(
+        from vllm import LLM
+    except Exception as exc:
+        logger.warning('vLLM unavailable for %s: %s', cfg.get('path'), exc)
+        return None
+
+    key = cfg['path']
+    if key not in _vllm_engines:
+        logger.info('Loading vLLM model: %s', key)
+        _vllm_engines[key] = LLM(model=key)
+    return _vllm_engines[key]
+
+
+def chat_completion(model_name, messages, temperature=0.2, max_tokens=1024):
+    """Run a chat completion request."""
+    cfg = get_model_config(model_name)
+    if cfg['type'] != 'chat':
+        raise ValueError('Model {0} is not chat type'.format(model_name))
+
+    REQUESTS.labels(endpoint='chat', model=model_name).inc()
+    start = time.time()
+
+    prompt = ''
+    for message in messages:
+        prompt += '{0}: {1}\n'.format(message['role'], message['content'])
+
+    engine = _get_vllm_engine(cfg)
+    text = None
+    if engine is not None:
+        try:
+            outputs = engine.generate(
+                [prompt],
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+            text = outputs[0].outputs[0].text
+        except Exception as exc:
+            logger.warning('vLLM generation failed for %s: %s', model_name, exc)
+
+    if text is None:
+        fallback = _build_fallback_model(model_name)
+        response = fallback.chat_completion(
             messages=messages,
-            temperature=temperature if temperature is not None else 0.2,
+            temperature=temperature,
             max_tokens=max_tokens,
         )
-        response.setdefault('model', config.get('id', model.model_name))
-        log_event(
-            logging.INFO,
-            'chat_completion',
-            model=response.get('model'),
-            message_count=len(messages),
-        )
-        return response
-    except Exception as exc:
-        increment('realai_chat_failures_total')
-        log_event(logging.ERROR, 'chat_completion_failed', error=str(exc))
-        raise
+        text = response['choices'][0]['message']['content']
+
+    LATENCY.labels(endpoint='chat', model=model_name).observe(time.time() - start)
+    TOKENS.labels(model=model_name, direction='output').inc(len(text.split()))
+
+    return {
+        'id': 'chatcmpl-realai',
+        'model': model_name,
+        'choices': [
+            {
+                'index': 0,
+                'message': {'role': 'assistant', 'content': text},
+                'finish_reason': 'stop',
+            }
+        ],
+    }

@@ -1,11 +1,9 @@
 """Routing helpers for the structured RealAI server."""
 
-from typing import Any, Dict, Iterable, List, Tuple
-
-from .config import get_model_config, list_models
+from .config import list_models
 from .embeddings import embed
-from .metrics import render_prometheus_text
 from .inference import chat_completion
+from .metrics import CONTENT_TYPE_LATEST, generate_latest
 
 
 class RequestValidationError(Exception):
@@ -44,12 +42,9 @@ def _require_input_texts(values):
 
 def health_response():
     """Return a health payload for the structured server."""
-    models = list_models()
     return {
-        'status': 'healthy',
-        'service': 'RealAI',
-        'available_models': models,
-        'model_count': len(models),
+        'status': 'ok',
+        'available_models': list_models(),
     }
 
 
@@ -60,9 +55,8 @@ def handle_chat_request(payload):
     if not model_name:
         raise RequestValidationError('model is required.')
     messages = _require_messages(payload.get('messages'))
-    config = get_model_config(model_name)
     return chat_completion(
-        config,
+        model_name,
         messages,
         temperature=payload.get('temperature', 0.2),
         max_tokens=payload.get('max_tokens', 1024),
@@ -76,8 +70,7 @@ def handle_embeddings_request(payload):
     if not model_name:
         raise RequestValidationError('model is required.')
     inputs = _require_input_texts(payload.get('input'))
-    config = get_model_config(model_name)
-    vectors = embed(config, inputs)
+    vectors = embed(model_name, inputs)
     return {
         'object': 'list',
         'model': model_name,
@@ -93,16 +86,12 @@ def handle_embeddings_request(payload):
 
 
 def dispatch_request(method, path, payload=None):
-    """Dispatch a request to the structured server router.
-
-    Returns:
-        Tuple[int, Any, str]: HTTP status, payload, and content type.
-    """
+    """Dispatch a request to the structured server router."""
     try:
         if method == 'GET' and path == '/health':
             return 200, health_response(), 'application/json'
         if method == 'GET' and path == '/metrics':
-            return 200, render_prometheus_text(), 'text/plain; version=0.0.4'
+            return 200, generate_latest().decode('utf-8'), CONTENT_TYPE_LATEST
         if method == 'POST' and path == '/v1/chat/completions':
             return 200, handle_chat_request(payload or {}), 'application/json'
         if method == 'POST' and path == '/v1/embeddings':
@@ -110,7 +99,7 @@ def dispatch_request(method, path, payload=None):
         return 404, {'error': {'message': 'Not found'}}, 'application/json'
     except RequestValidationError as exc:
         return exc.status_code, {'error': {'message': str(exc)}}, 'application/json'
-    except KeyError as exc:
+    except ValueError as exc:
         return 404, {'error': {'message': str(exc)}}, 'application/json'
     except Exception as exc:
         return 500, {'error': {'message': str(exc)}}, 'application/json'

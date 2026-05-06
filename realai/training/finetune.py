@@ -1,34 +1,24 @@
-"""Fine-tuning plan builder for RealAI."""
+"""Thin wrapper around HuggingFace / TRL / Axolotl."""
 
-import argparse
-import json
+from pathlib import Path
 
 
-def build_finetune_plan(base_model='realai-1.0', dataset_path='realai/datasets/processed/instructions.jsonl', backend='hf'):
-    """Return a lightweight fine-tuning plan without starting training."""
-    command = {
-        'hf': ['python', '-m', 'trl', 'sft', '--model_name', base_model, '--dataset', dataset_path],
-        'axolotl': ['axolotl', 'train', 'configs/axolotl.yml'],
-    }.get(backend, ['python', 'finetune.py'])
+def build_finetune_plan(data_dir=None):
+    """Return the train/val paths for a future fine-tune job."""
+    dataset_dir = Path(data_dir) if data_dir else Path(__file__).resolve().parents[1] / 'datasets' / 'processed'
+    train_path = dataset_dir / 'train.jsonl'
+    val_path = dataset_dir / 'val.jsonl'
     return {
         'status': 'ready',
-        'backend': backend,
-        'base_model': base_model,
-        'dataset_path': dataset_path,
-        'command': command,
-        'note': 'Review the generated command and install the matching optional tooling before training.',
+        'train_path': str(train_path),
+        'val_path': str(val_path),
     }
 
 
-def main(argv=None):
-    """CLI entrypoint for fine-tuning plan generation."""
-    parser = argparse.ArgumentParser(description='Build a fine-tuning plan for RealAI.')
-    parser.add_argument('--base-model', default='realai-1.0')
-    parser.add_argument('--dataset-path', default='realai/datasets/processed/instructions.jsonl')
-    parser.add_argument('--backend', default='hf')
-    args = parser.parse_args(argv)
-    plan = build_finetune_plan(args.base_model, args.dataset_path, args.backend)
-    print(json.dumps(plan, indent=2, sort_keys=True))
+def main():
+    """CLI entrypoint for the fine-tune stub."""
+    plan = build_finetune_plan()
+    print('[realai] Fine-tune stub. Train: {0}, Val: {1}'.format(plan['train_path'], plan['val_path']))
     return plan
 
 

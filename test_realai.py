@@ -150,16 +150,17 @@ def test_structured_server_routes():
     from realai.server.router import dispatch_request
 
     models = list_models()
-    assert 'realai-2.0' in models
-    config = get_model_config('realai-2.0')
-    assert config['id'] == 'realai-2.0'
-    assert config['path'].endswith('realai/models/realai-1.0')
+    assert 'realai-1.0' in models
+    config = get_model_config('realai-1.0')
+    assert config['id'] == 'realai-1.0'
+    assert config['backend'] == 'vllm'
+    assert config['path'] == 'meta-llama/Meta-Llama-3-8B-Instruct'
 
     status, response, content_type = dispatch_request(
         'POST',
         '/v1/chat/completions',
         {
-            'model': 'realai-2.0',
+            'model': 'realai-1.0',
             'messages': [{'role': 'user', 'content': 'Hello structured server'}],
             'temperature': 0.2,
             'max_tokens': 32,
@@ -179,7 +180,7 @@ def test_structured_server_routes():
 
     status, response, content_type = dispatch_request('GET', '/metrics')
     assert status == 200
-    assert 'realai_chat_requests_total' in response
+    assert 'realai_requests_total' in response
     print("✓ Structured server routes test passed")
 
 
@@ -196,33 +197,26 @@ def test_structured_training_pipeline():
 
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        raw_path = tmp_path / 'raw'
         processed_path = tmp_path / 'processed'
-        raw_path.mkdir()
-
-        (raw_path / 'agent_logs.jsonl').write_text(
-            json.dumps({'prompt': 'Hello', 'response': 'Hi there', 'source': 'log'}) + '\n',
+        processed_path.mkdir()
+        (processed_path / 'instructions.jsonl').write_text(
+            json.dumps({
+                'messages': [
+                    {'role': 'user', 'content': 'Explain vector databases.'},
+                    {'role': 'assistant', 'content': 'A vector database stores embeddings.'},
+                ]
+            }) + '\n',
             encoding='utf-8'
         )
-        (raw_path / 'memory_summary.json').write_text(
-            json.dumps({'content': 'Long memory', 'summary': 'Short memory'}),
-            encoding='utf-8'
-        )
-        (raw_path / 'tool_trace.json').write_text(
-            json.dumps([{'task': 'Trace task', 'result': 'Trace result'}]),
-            encoding='utf-8'
-        )
-        (raw_path / 'change.patch').write_text('diff --git a/file.py b/file.py', encoding='utf-8')
 
-        manifest = build_dataset_bundle(str(raw_path), str(processed_path))
-        assert manifest['datasets']['instructions']['rows'] == 2
-        assert manifest['datasets']['code_pairs']['rows'] == 1
-        assert manifest['datasets']['memory_pairs']['rows'] == 1
+        manifest = build_dataset_bundle(str(processed_path), str(processed_path))
+        assert manifest['datasets']['train']['rows'] == 1
+        assert manifest['datasets']['val']['rows'] == 0
 
-        evaluation = evaluate_instruction_dataset(manifest['datasets']['instructions']['path'])
-        assert evaluation['examples'] == 2
+        evaluation = evaluate_instruction_dataset(manifest['datasets']['train']['path'])
+        assert evaluation['examples'] == 1
 
-        plan = build_finetune_plan(dataset_path=manifest['datasets']['instructions']['path'])
+        plan = build_finetune_plan(data_dir=str(processed_path))
         assert plan['status'] == 'ready'
     print("✓ Structured training pipeline test passed")
 
@@ -230,12 +224,32 @@ def test_structured_training_pipeline():
 def test_structured_sdk_facade():
     """Test the structured SDK facade."""
     print("Testing structured SDK facade...")
-    from realai.sdk.python.realai_client import RealAIClient as SDKRealAIClient, create_client
+    import threading
+    from wsgiref.simple_server import make_server
 
-    client = create_client()
-    assert isinstance(client, SDKRealAIClient)
-    response = client.chat.create(messages=[{'role': 'user', 'content': 'Hello from sdk'}])
-    assert 'choices' in response
+    from realai.sdk.python.realai_client import RealAIClient as SDKRealAIClient, create_client
+    from realai.server.app import wsgi_app
+
+    server = make_server('127.0.0.1', 0, wsgi_app)
+    thread = threading.Thread(target=server.serve_forever)
+    thread.daemon = True
+    thread.start()
+    try:
+        client = create_client(api_url='http://127.0.0.1:{0}'.format(server.server_port))
+        assert isinstance(client, SDKRealAIClient)
+        response = client.chat(
+            'realai-1.0',
+            [{'role': 'user', 'content': 'Hello from sdk'}],
+            temperature=0.2,
+            max_tokens=32,
+        )
+        assert 'choices' in response
+
+        embeddings = client.embeddings('realai-embed', ['Hello from sdk'])
+        assert len(embeddings['data']) == 1
+    finally:
+        server.shutdown()
+        server.server_close()
     print("✓ Structured SDK facade test passed")
 
 

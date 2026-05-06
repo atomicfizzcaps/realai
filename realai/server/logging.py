@@ -1,30 +1,16 @@
-"""Structured logging helpers for the RealAI server."""
+"""Backward-compatible logging shim for the structured RealAI server."""
 
-import json
-import logging
-import sys
-import time
-
-_DEFAULT_LOGGER_NAME = 'realai.server'
+from .logging_utils import setup_logging
 
 
-def get_logger(name=_DEFAULT_LOGGER_NAME):
-    """Return a configured logger instance."""
-    logger = logging.getLogger(name)
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setFormatter(logging.Formatter('%(message)s'))
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-        logger.propagate = False
-    return logger
+def get_logger(name='realai'):
+    """Return the configured RealAI logger."""
+    return setup_logging()
 
 
 def log_event(level, event, **fields):
-    """Emit a structured JSON log line."""
-    payload = {
-        'timestamp': int(time.time()),
-        'event': event,
-    }
-    payload.update(fields)
-    get_logger().log(level, json.dumps(payload, sort_keys=True))
+    """Emit a simple structured log line."""
+    logger = setup_logging()
+    extra = ' '.join('{0}={1}'.format(key, value) for key, value in sorted(fields.items()))
+    message = event if not extra else '{0} {1}'.format(event, extra)
+    logger.log(level, message)
