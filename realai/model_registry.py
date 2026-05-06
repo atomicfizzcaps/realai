@@ -42,6 +42,7 @@ class ModelMetadata:
     quality_score: int = 3              # 1 (lowest) → 5 (highest)
     local_available: bool = False       # can be run via local runtime
     family: str = "realai"
+    capabilities: List[str] = field(default_factory=list)
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -60,6 +61,7 @@ class ModelMetadata:
             "quality_score": self.quality_score,
             "local_available": self.local_available,
             "family": self.family,
+            "capabilities": self.capabilities,
         }
 
 
@@ -83,6 +85,7 @@ _MODELS: List[ModelMetadata] = [
         speed_score=4,
         quality_score=5,
         family="realai",
+        capabilities=["coding", "vision", "reasoning", "long-context", "tool-calling", "multimodal"],
     ),
     ModelMetadata(
         id="realai-1.0-base",
@@ -96,6 +99,7 @@ _MODELS: List[ModelMetadata] = [
         quality_score=3,
         local_available=True,
         family="realai-1.0",
+        capabilities=["local", "speed"],
     ),
     ModelMetadata(
         id="realai-1.0-instruct",
@@ -110,6 +114,7 @@ _MODELS: List[ModelMetadata] = [
         quality_score=4,
         local_available=True,
         family="realai-1.0",
+        capabilities=["local", "tool-calling"],
     ),
     ModelMetadata(
         id="realai-1.0-agentic",
@@ -125,6 +130,7 @@ _MODELS: List[ModelMetadata] = [
         quality_score=5,
         local_available=True,
         family="realai-1.0",
+        capabilities=["local", "reasoning", "tool-calling", "long-context"],
     ),
     # ---- Third-party models (metadata only — keys not stored here) ----------
     ModelMetadata(
@@ -142,6 +148,7 @@ _MODELS: List[ModelMetadata] = [
         speed_score=4,
         quality_score=5,
         family="gpt-4",
+        capabilities=["vision", "reasoning", "tool-calling", "multimodal"],
     ),
     ModelMetadata(
         id="gpt-4o-mini",
@@ -156,6 +163,7 @@ _MODELS: List[ModelMetadata] = [
         speed_score=5,
         quality_score=3,
         family="gpt-4",
+        capabilities=["speed", "tool-calling"],
     ),
     ModelMetadata(
         id="claude-3-5-sonnet-20241022",
@@ -171,6 +179,7 @@ _MODELS: List[ModelMetadata] = [
         speed_score=3,
         quality_score=5,
         family="claude-3.5",
+        capabilities=["reasoning", "long-context", "tool-calling"],
     ),
     ModelMetadata(
         id="llama-3.1-8b-instant",
@@ -185,6 +194,7 @@ _MODELS: List[ModelMetadata] = [
         quality_score=3,
         local_available=True,
         family="llama-3.1",
+        capabilities=["local", "speed"],
     ),
     ModelMetadata(
         id="gemini-1.5-pro",
@@ -200,8 +210,41 @@ _MODELS: List[ModelMetadata] = [
         speed_score=3,
         quality_score=5,
         family="gemini-1.5",
+        capabilities=["vision", "reasoning", "long-context", "multimodal"],
     ),
 ]
+
+
+class CapabilityGraph:
+    """Maps capability strings to sorted lists of (model_id, score) tuples.
+
+    Capability strings: coding, vision, reasoning, long-context, speed,
+    tool-calling, multimodal, local, embeddings
+    """
+
+    def __init__(self, models: List[ModelMetadata]) -> None:
+        """Build the capability graph from a list of model metadata."""
+        self._graph: Dict[str, List[tuple]] = {}
+        for model in models:
+            for cap in model.capabilities:
+                if cap not in self._graph:
+                    self._graph[cap] = []
+                score = (model.quality_score + model.speed_score) / 2.0
+                self._graph[cap].append((model.id, score))
+        for cap in self._graph:
+            self._graph[cap].sort(key=lambda x: x[1], reverse=True)
+
+    def get(self, capability: str) -> List[tuple]:
+        """Return sorted (model_id, score) list for a capability."""
+        return self._graph.get(capability, [])
+
+    def all_capabilities(self) -> List[str]:
+        """Return all known capability strings."""
+        return list(self._graph.keys())
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Return capability graph as a plain dict."""
+        return {cap: list(entries) for cap, entries in self._graph.items()}
 
 
 class ModelRegistry:
@@ -235,18 +278,66 @@ class ModelRegistry:
         need_tools: bool = False,
         max_cost: int = 5,
         min_quality: int = 1,
+        task_type: Optional[str] = None,
     ) -> Optional[ModelMetadata]:
         """Return the best-fit model matching the given constraints.
 
         Selection is deterministic: highest quality among candidates, then
         highest speed as tiebreaker.
+
+        Args:
+            prefer_local: If True, only consider locally available models.
+            need_tools: If True, only consider models with tool-calling.
+            max_cost: Maximum cost score (1-5).
+            min_quality: Minimum quality score (1-5).
+            task_type: Optional capability string for task-based routing.
         """
+        if task_type is not None:
+            constraints = {
+                "max_cost": max_cost,
+                "min_quality": min_quality,
+                "prefer_local": prefer_local,
+                "need_tools": need_tools,
+            }
+            routed = self.route_for_task(task_type, constraints)
+            if routed is not None:
+                return routed
         candidates = [
             m for m in self._models.values()
             if m.cost_score <= max_cost
             and m.quality_score >= min_quality
             and (not need_tools or m.tool_calling)
             and (not prefer_local or m.local_available)
+        ]
+        if not candidates:
+            return None
+        return max(candidates, key=lambda m: (m.quality_score, m.speed_score))
+
+    def route_for_task(
+        self,
+        task_type: str,
+        constraints: Optional[Dict[str, Any]] = None,
+    ) -> Optional[ModelMetadata]:
+        """Return the best model for a task type given optional constraints.
+
+        Args:
+            task_type: A capability string like "coding" or "vision".
+            constraints: Optional dict with keys: max_cost, min_quality,
+                         prefer_local, need_tools.
+
+        Returns:
+            Best matching ModelMetadata, or None if no model matches.
+        """
+        if constraints is None:
+            constraints = {}
+        capable_ids = {mid for mid, _ in CAPABILITY_GRAPH.get(task_type)}
+        candidates = [
+            m for m in self._models.values()
+            if m.id in capable_ids
+            and m.cost_score <= constraints.get("max_cost", 5)
+            and m.quality_score >= constraints.get("min_quality", 1)
+            and (not constraints.get("need_tools") or m.tool_calling)
+            and (not constraints.get("prefer_local") or m.local_available)
         ]
         if not candidates:
             return None
@@ -274,6 +365,9 @@ class ModelRegistry:
 
 # Global singleton
 MODEL_REGISTRY = ModelRegistry()
+
+#: Pre-built capability graph over the default model catalogue.
+CAPABILITY_GRAPH = CapabilityGraph(_MODELS)
 
 
 def get_model_metadata(model_id: str) -> Optional[Dict[str, Any]]:

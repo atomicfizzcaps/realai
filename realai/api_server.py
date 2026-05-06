@@ -577,98 +577,6 @@ function toast(msg) {
 </html>"""
 
 
-# ---------------------------------------------------------------------------
-# Dashboard – minimal real-time agent execution visualiser at GET /dashboard
-# ---------------------------------------------------------------------------
-
-_DASHBOARD_HTML = """<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>RealAI Dashboard</title>
-<style>
-  :root { --bg:#0d0d0d; --bg2:#161616; --bg3:#1e1e1e; --border:#2a2a2a;
-          --text:#e0e0e0; --text2:#888; --accent:#6c63ff;
-          --ok:#4caf50; --err:#ef5350; --warn:#ff9800; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { font-family:'Segoe UI',sans-serif; background:var(--bg); color:var(--text);
-         display:flex; flex-direction:column; height:100vh; overflow:hidden; }
-  header { background:var(--bg2); border-bottom:1px solid var(--border);
-           padding:12px 20px; display:flex; align-items:center; gap:12px; }
-  header h1 { font-size:1.1rem; font-weight:700; }
-  #conn-dot { width:10px; height:10px; border-radius:50%; background:var(--err);
-              transition:background .3s; }
-  #conn-dot.live { background:var(--ok); }
-  #conn-label { font-size:.75rem; color:var(--text2); }
-  main { flex:1; overflow:auto; padding:20px; display:flex; flex-direction:column; gap:12px; }
-  #events { display:flex; flex-direction:column; gap:8px; }
-  .ev { background:var(--bg2); border:1px solid var(--border); border-radius:8px;
-        padding:10px 14px; animation:fadeIn .25s; }
-  .ev.dispatch  { border-left:3px solid var(--accent); }
-  .ev.progress  { border-left:3px solid var(--warn); }
-  .ev.complete  { border-left:3px solid var(--ok); }
-  .ev.error     { border-left:3px solid var(--err); }
-  .ev.warning   { border-left:3px solid var(--warn); }
-  .ev-hdr { display:flex; gap:8px; align-items:center; margin-bottom:4px; }
-  .ev-type { font-size:.7rem; font-weight:700; text-transform:uppercase; letter-spacing:.08em;
-             padding:2px 8px; border-radius:12px; background:var(--bg3); }
-  .ev-agent { font-size:.8rem; font-weight:600; }
-  .ev-ts { font-size:.7rem; color:var(--text2); margin-left:auto; }
-  .ev-data { font-size:.78rem; color:var(--text2); font-family:monospace; word-break:break-all; }
-  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
-  #empty { text-align:center; color:var(--text2); padding:60px 0; font-size:.9rem; }
-</style>
-</head>
-<body>
-<header>
-  <div id="conn-dot"></div>
-  <span id="conn-label">Connecting…</span>
-  <h1>RealAI — Execution Dashboard</h1>
-</header>
-<main>
-  <div id="events"><div id="empty">Waiting for agent executions…</div></div>
-</main>
-<script>
-const eventsEl = document.getElementById('events');
-const emptyEl  = document.getElementById('empty');
-const dot      = document.getElementById('conn-dot');
-const label    = document.getElementById('conn-label');
-let es;
-
-function connect() {
-  es = new EventSource('/events');
-  es.onopen = () => { dot.classList.add('live'); label.textContent = 'Live'; };
-  es.onerror = () => { dot.classList.remove('live'); label.textContent = 'Reconnecting…';
-                       setTimeout(connect, 3000); es.close(); };
-  es.onmessage = (e) => {
-    let data;
-    try { data = JSON.parse(e.data); } catch (_) { return; }
-    if (emptyEl.parentNode) emptyEl.remove();
-
-    const div = document.createElement('div');
-    div.className = 'ev ' + (data.event_type || '');
-
-    const ts = new Date(data.timestamp || Date.now()).toLocaleTimeString();
-    div.innerHTML =
-      '<div class="ev-hdr">' +
-        '<span class="ev-type">' + (data.event_type || 'event') + '</span>' +
-        '<span class="ev-agent">' + (data.agent_id || '—') + '</span>' +
-        '<span class="ev-ts">' + ts + '</span>' +
-      '</div>' +
-      '<div class="ev-data">' + JSON.stringify(data.data || {}) + '</div>';
-
-    eventsEl.prepend(div);
-    // Keep list bounded to 200 items
-    while (eventsEl.children.length > 200) eventsEl.lastChild.remove();
-  };
-}
-connect();
-</script>
-</body>
-</html>"""
-
-
 class RealAIAPIHandler(BaseHTTPRequestHandler):
     """HTTP request handler for RealAI API."""
 
@@ -767,7 +675,7 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
         """Handle CORS preflight requests."""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-Provider, X-Base-URL')
         self.end_headers()
@@ -825,81 +733,98 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
             self._send_response(200, response)
 
         elif parsed_path.path == '/v1/capabilities':
-            model = self._get_model()
-            self._send_response(200, model.get_capability_catalog())
+            try:
+                from realai.model_registry import CAPABILITY_GRAPH
+                self._send_response(200, CAPABILITY_GRAPH.to_dict())
+            except Exception:
+                model = self._get_model()
+                self._send_response(200, model.get_capability_catalog())
 
         elif parsed_path.path == '/v1/providers/capabilities':
             model = self._get_model()
             provider = parse_qs(parsed_path.query).get("provider", [None])[0]
             self._send_response(200, model.get_provider_capabilities(provider=provider))
 
+        elif parsed_path.path == '/v1/tools':
+            try:
+                from realai.tools import TOOL_REGISTRY
+                self._send_response(200, {"tools": TOOL_REGISTRY.to_openai_format()})
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/plugins':
+            try:
+                from realai.plugin_marketplace import PluginDiscovery
+                discovery = PluginDiscovery()
+                installed = discovery.list_installed()
+                self._send_response(200, {
+                    "plugins": [
+                        {
+                            "name": p.name,
+                            "version": p.version,
+                            "author": p.author,
+                            "description": p.description,
+                        }
+                        for p in installed
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/personas':
+            try:
+                from realai.identity import IDENTITY_MANAGER
+                personas = IDENTITY_MANAGER.list_all()
+                self._send_response(200, {
+                    "personas": [
+                        {
+                            "id": p.id,
+                            "name": p.name,
+                            "description": p.description,
+                            "tone": p.tone,
+                        }
+                        for p in personas
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/world/state':
+            try:
+                from realai.world_model import WORLD_STATE
+                self._send_response(200, {"facts": WORLD_STATE.all_facts()})
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/knowledge/query':
+            try:
+                from realai.knowledge_graph import KNOWLEDGE_GRAPH
+                params = parse_qs(parsed_path.query)
+                subject = params.get("subject", [None])[0]
+                predicate = params.get("predicate", [None])[0]
+                obj = params.get("object", [None])[0]
+                rels = KNOWLEDGE_GRAPH.query(
+                    subject_id=subject,
+                    predicate=predicate,
+                    object_id=obj,
+                )
+                self._send_response(200, {
+                    "relationships": [
+                        {
+                            "id": r.id,
+                            "subject_id": r.subject_id,
+                            "predicate": r.predicate,
+                            "object_id": r.object_id,
+                            "confidence": r.confidence,
+                        }
+                        for r in rels
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
         elif parsed_path.path == '/health':
             self._send_response(200, {"status": "healthy", "model": "realai-2.0"})
-
-        elif parsed_path.path == '/v1/agents':
-            # List all registered agents
-            from . import _agent_registry
-            agents = [
-                {
-                    "id": a.id,
-                    "role": a.role,
-                    "description": a.description,
-                    "tags": a.tags,
-                    "capabilities": a.capabilities,
-                    "risk_level": a.risk_level,
-                    "preferred_profile": a.preferred_profile,
-                }
-                for a in _agent_registry.agents.values()
-            ]
-            self._send_response(200, {"object": "list", "data": agents})
-
-        elif parsed_path.path.startswith('/v1/agents/') and parsed_path.path.endswith('/check'):
-            # GET /v1/agents/{id}/check — access assessment for a single agent
-            parts = parsed_path.path.split('/')
-            agent_id = parts[3] if len(parts) >= 5 else ""
-            from . import _agent_registry
-            agent = _agent_registry.get_agent(agent_id)
-            if not agent:
-                self._send_response(404, {"error": f"Agent '{agent_id}' not found"})
-            else:
-                profile_name = parse_qs(parsed_path.query).get("profile", [None])[0]
-                if profile_name and profile_name in _agent_registry.profiles:
-                    profile = _agent_registry.profiles[profile_name]
-                else:
-                    profile = _agent_registry.recommend_profile(agent)
-                result = _agent_registry.assess_access(agent, profile)
-                self._send_response(200, result)
-
-        elif parsed_path.path == '/dashboard':
-            self._send_html_response(200, _DASHBOARD_HTML)
-
-        elif parsed_path.path == '/events':
-            # Server-Sent Events stream for real-time execution updates
-            from . import _execution_runtime
-            import queue as _queue_mod
-            q = _execution_runtime.subscribe()
-            self.send_response(200)
-            self.send_header('Content-Type', 'text/event-stream')
-            self.send_header('Cache-Control', 'no-cache')
-            self.send_header('Connection', 'keep-alive')
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            try:
-                while True:
-                    try:
-                        event = q.get(timeout=30)
-                        data = json.dumps(event)
-                        self.wfile.write(f"data: {data}\n\n".encode("utf-8"))
-                        self.wfile.flush()
-                    except _queue_mod.Empty:
-                        # Send a heartbeat keep-alive comment every 30 s
-                        self.wfile.write(b": heartbeat\n\n")
-                        self.wfile.flush()
-            except (BrokenPipeError, ConnectionResetError):
-                pass
-            finally:
-                _execution_runtime.unsubscribe(q)
-            return  # response already sent
 
         else:
             self._send_response(404, {"error": "Not found"})
@@ -1034,43 +959,218 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
                 )
                 self._send_response(200, response)
 
-            elif parsed_path.path == '/v1/workflows':
-                # Execute a multi-step agent workflow.
-                # Body: { "name": str, "steps": [{"agent_id": str, "task": str}],
-                #         "parallel": bool }
-                from . import _agent_registry
-                import concurrent.futures as _cf
-                steps = body.get('steps', [])
-                parallel = bool(body.get('parallel', False))
+            elif parsed_path.path == '/v1/tools/validate':
+                try:
+                    from realai.tools import ToolCallValidator
+                    validator = ToolCallValidator()
+                    result = validator.validate(
+                        body.get("name", ""),
+                        body.get("arguments", {}),
+                    )
+                    self._send_response(200, {
+                        "valid": result.valid,
+                        "errors": result.errors,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
-                if not steps:
-                    self._send_response(400, {"error": "Workflow 'steps' array is required"})
-                    return
+            elif parsed_path.path == '/v1/agents/pipeline':
+                try:
+                    from realai.agent_runtime import (
+                        PipelineRunner, PipelineDefinition, PipelineStep,
+                    )
+                    from realai import AgentRegistry
+                    pipeline_data = body.get("pipeline", {})
+                    steps = [
+                        PipelineStep(
+                            agent_id=s.get("agent_id", ""),
+                            task_template=s.get("task_template", "{input}"),
+                            input_key=s.get("input_key", "input"),
+                            output_key=s.get("output_key", "output"),
+                        )
+                        for s in pipeline_data.get("steps", [])
+                    ]
+                    pipeline = PipelineDefinition(
+                        id=pipeline_data.get("id", "pipeline-1"),
+                        name=pipeline_data.get("name", "Pipeline"),
+                        steps=steps,
+                        description=pipeline_data.get("description", ""),
+                    )
+                    registry = AgentRegistry()
+                    runner = PipelineRunner()
+                    result = runner.run(pipeline, body.get("input", ""), registry)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
-                workflow_name = body.get('name', 'unnamed-workflow')
-                results = []
+            elif parsed_path.path == '/v1/agents/graph':
+                try:
+                    from realai.agent_runtime import AgentGraph, AgentNode, AgentEdge
+                    from realai import AgentRegistry
+                    graph = AgentGraph()
+                    for node_data in body.get("nodes", []):
+                        graph.add_node(AgentNode(
+                            agent_id=node_data.get("agent_id", ""),
+                            task_template=node_data.get("task_template", "{input}"),
+                        ))
+                    for edge_data in body.get("edges", []):
+                        graph.add_edge(AgentEdge(
+                            from_node=edge_data.get("from_node", ""),
+                            to_node=edge_data.get("to_node", ""),
+                            condition=edge_data.get("condition"),
+                        ))
+                    registry = AgentRegistry()
+                    result = graph.execute(body.get("input", ""), registry)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
-                def _run_step(step):
-                    aid = step.get('agent_id', '')
-                    task = step.get('task', '')
-                    out = _agent_registry.execute_agent(aid, task)
-                    return {"agent_id": aid, "task": task, "result": out}
+            elif parsed_path.path == '/v1/memory/store':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    item_id = MEMORY_ENGINE.store(
+                        content=body.get("content", ""),
+                        tags=body.get("tags", []),
+                        namespace=body.get("namespace", "default"),
+                    )
+                    self._send_response(200, {"item_id": item_id, "status": "stored"})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
-                if parallel:
-                    with _cf.ThreadPoolExecutor(max_workers=min(len(steps), 8)) as ex:
-                        futures = [ex.submit(_run_step, s) for s in steps]
-                        results = [f.result() for f in futures]  # preserve submission order
-                else:
-                    for step in steps:
-                        results.append(_run_step(step))
+            elif parsed_path.path == '/v1/memory/forget':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    success = MEMORY_ENGINE.forget(body.get("item_id", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
-                self._send_response(200, {
-                    "object": "workflow.result",
-                    "name": workflow_name,
-                    "parallel": parallel,
-                    "steps_executed": len(results),
-                    "results": results,
-                })
+            elif parsed_path.path == '/v1/plugins/install':
+                try:
+                    from realai.plugin_marketplace import PluginDiscovery, PluginManifest
+                    manifest_data = body.get("manifest", {})
+                    manifest = PluginManifest(
+                        name=manifest_data.get("name", ""),
+                        version=manifest_data.get("version", "0.0.0"),
+                        author=manifest_data.get("author", ""),
+                        description=manifest_data.get("description", ""),
+                        permissions=manifest_data.get("permissions", []),
+                        signature=manifest_data.get("signature", ""),
+                        homepage=manifest_data.get("homepage", ""),
+                    )
+                    discovery = PluginDiscovery()
+                    success = discovery.install(manifest)
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/plugins/uninstall':
+                try:
+                    from realai.plugin_marketplace import PluginDiscovery
+                    discovery = PluginDiscovery()
+                    success = discovery.uninstall(body.get("name", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/knowledge/ingest':
+                try:
+                    from realai.knowledge_graph import (
+                        KNOWLEDGE_GRAPH, Entity, Relationship,
+                    )
+                    for ent_data in body.get("entities", []):
+                        KNOWLEDGE_GRAPH.add_entity(Entity(
+                            id=ent_data.get("id", ""),
+                            name=ent_data.get("name", ""),
+                            entity_type=ent_data.get("entity_type", "unknown"),
+                            attributes=ent_data.get("attributes", {}),
+                        ))
+                    for rel_data in body.get("relationships", []):
+                        KNOWLEDGE_GRAPH.add_relationship(Relationship(
+                            id=rel_data.get("id", ""),
+                            subject_id=rel_data.get("subject_id", ""),
+                            predicate=rel_data.get("predicate", ""),
+                            object_id=rel_data.get("object_id", ""),
+                            confidence=rel_data.get("confidence", 1.0),
+                            source=rel_data.get("source", ""),
+                        ))
+                    self._send_response(200, {
+                        "status": "ingested",
+                        "stats": KNOWLEDGE_GRAPH.stats(),
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/knowledge/synthesize':
+                try:
+                    from realai.knowledge_graph import KNOWLEDGE_GRAPH, SynthesisEngine
+                    engine = SynthesisEngine()
+                    result = engine.answer(body.get("query", ""), KNOWLEDGE_GRAPH)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/world/goal':
+                try:
+                    from realai.world_model import GOAL_TRACKER
+                    goal = GOAL_TRACKER.add_goal(
+                        description=body.get("description", ""),
+                        sub_goals=body.get("sub_goals", []),
+                        deadline=body.get("deadline"),
+                    )
+                    self._send_response(200, {
+                        "goal_id": goal.id,
+                        "description": goal.description,
+                        "status": goal.status,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/world/observe':
+                try:
+                    from realai.world_model import WORLD_STATE, BeliefUpdater, Observation
+                    import time as _time
+                    import uuid as _uuid
+                    obs = Observation(
+                        id=str(_uuid.uuid4()),
+                        content=body.get("content", ""),
+                        confidence=body.get("confidence", 1.0),
+                        source=body.get("source", ""),
+                        timestamp=_time.time(),
+                    )
+                    updater = BeliefUpdater()
+                    updater.update(WORLD_STATE, obs)
+                    self._send_response(200, {
+                        "status": "observed",
+                        "observation_id": obs.id,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/personas':
+                try:
+                    from realai.identity import IDENTITY_MANAGER
+                    persona = IDENTITY_MANAGER.create(
+                        name=body.get("name", ""),
+                        description=body.get("description", ""),
+                        system_prompt=body.get("system_prompt", ""),
+                        tone=body.get("tone", "balanced"),
+                    )
+                    self._send_response(200, {
+                        "id": persona.id,
+                        "name": persona.name,
+                        "tone": persona.tone,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/personas/activate':
+                try:
+                    from realai.identity import PERSONA_SWITCHER
+                    result = PERSONA_SWITCHER.switch_to(body.get("persona_id", ""))
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
 
             else:
                 self._send_response(404, {"error": "Endpoint not found"})
@@ -1085,6 +1185,25 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Log API requests."""
         print(f"[{self.log_date_time_string()}] {format % args}")
+
+    def do_DELETE(self):
+        """Handle DELETE requests."""
+        parsed_path = urlparse(self.path)
+        try:
+            body = self._read_body()
+            if parsed_path.path == '/v1/memory/forget':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    success = MEMORY_ENGINE.forget(body.get("item_id", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+            else:
+                self._send_response(404, {"error": "Not found"})
+        except json.JSONDecodeError:
+            self._send_response(400, {"error": "Invalid JSON"})
+        except Exception as e:
+            self._send_response(500, {"error": str(e)})
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):
@@ -1112,15 +1231,11 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
     print("  GET  /              Web chat UI (browser)")
     print("  GET  /ui            Web chat UI (browser, alias)")
     print("  GET  /ui/providers  Provider metadata (JSON)")
-    print("  GET  /dashboard     Real-time execution dashboard (browser)")
-    print("  GET  /events        SSE stream of execution events")
     print("  GET  /health")
     print("  GET  /v1/models")
     print("  GET  /v1/models/<model-id>")
     print("  GET  /v1/capabilities")
     print("  GET  /v1/providers/capabilities?provider=<name>")
-    print("  GET  /v1/agents")
-    print("  GET  /v1/agents/<id>/check")
     print("  POST /v1/chat/completions")
     print("  POST /v1/completions")
     print("  POST /v1/images/generations")
@@ -1131,7 +1246,6 @@ def run_server(host: str = "0.0.0.0", port: int = 8000):
     print("  POST /v1/synthesis/knowledge")
     print("  POST /v1/reflection/analyze")
     print("  POST /v1/agents/orchestrate")
-    print("  POST /v1/workflows")
     print("\nPass your API key via:  Authorization: Bearer <key>")
     print("Override provider via:  X-Provider: openai|anthropic|grok|gemini|openrouter|mistral|together|deepseek|perplexity")
     print("Override base URL via:  X-Base-URL: https://...")
