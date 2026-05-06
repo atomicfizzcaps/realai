@@ -675,7 +675,7 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
         """Handle CORS preflight requests."""
         self.send_response(200)
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
         self.send_header('Access-Control-Allow-Headers',
                          'Content-Type, Authorization, X-Provider, X-Base-URL')
         self.end_headers()
@@ -733,13 +733,95 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
             self._send_response(200, response)
 
         elif parsed_path.path == '/v1/capabilities':
-            model = self._get_model()
-            self._send_response(200, model.get_capability_catalog())
+            try:
+                from realai.model_registry import CAPABILITY_GRAPH
+                self._send_response(200, CAPABILITY_GRAPH.to_dict())
+            except Exception:
+                model = self._get_model()
+                self._send_response(200, model.get_capability_catalog())
 
         elif parsed_path.path == '/v1/providers/capabilities':
             model = self._get_model()
             provider = parse_qs(parsed_path.query).get("provider", [None])[0]
             self._send_response(200, model.get_provider_capabilities(provider=provider))
+
+        elif parsed_path.path == '/v1/tools':
+            try:
+                from realai.tools import TOOL_REGISTRY
+                self._send_response(200, {"tools": TOOL_REGISTRY.to_openai_format()})
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/plugins':
+            try:
+                from realai.plugin_marketplace import PluginDiscovery
+                discovery = PluginDiscovery()
+                installed = discovery.list_installed()
+                self._send_response(200, {
+                    "plugins": [
+                        {
+                            "name": p.name,
+                            "version": p.version,
+                            "author": p.author,
+                            "description": p.description,
+                        }
+                        for p in installed
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/personas':
+            try:
+                from realai.identity import IDENTITY_MANAGER
+                personas = IDENTITY_MANAGER.list_all()
+                self._send_response(200, {
+                    "personas": [
+                        {
+                            "id": p.id,
+                            "name": p.name,
+                            "description": p.description,
+                            "tone": p.tone,
+                        }
+                        for p in personas
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/world/state':
+            try:
+                from realai.world_model import WORLD_STATE
+                self._send_response(200, {"facts": WORLD_STATE.all_facts()})
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
+
+        elif parsed_path.path == '/v1/knowledge/query':
+            try:
+                from realai.knowledge_graph import KNOWLEDGE_GRAPH
+                params = parse_qs(parsed_path.query)
+                subject = params.get("subject", [None])[0]
+                predicate = params.get("predicate", [None])[0]
+                obj = params.get("object", [None])[0]
+                rels = KNOWLEDGE_GRAPH.query(
+                    subject_id=subject,
+                    predicate=predicate,
+                    object_id=obj,
+                )
+                self._send_response(200, {
+                    "relationships": [
+                        {
+                            "id": r.id,
+                            "subject_id": r.subject_id,
+                            "predicate": r.predicate,
+                            "object_id": r.object_id,
+                            "confidence": r.confidence,
+                        }
+                        for r in rels
+                    ]
+                })
+            except Exception as e:
+                self._send_response(500, {"error": str(e)})
 
         elif parsed_path.path == '/health':
             self._send_response(200, {"status": "healthy", "model": "realai-2.0"})
@@ -877,6 +959,219 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
                 )
                 self._send_response(200, response)
 
+            elif parsed_path.path == '/v1/tools/validate':
+                try:
+                    from realai.tools import ToolCallValidator
+                    validator = ToolCallValidator()
+                    result = validator.validate(
+                        body.get("name", ""),
+                        body.get("arguments", {}),
+                    )
+                    self._send_response(200, {
+                        "valid": result.valid,
+                        "errors": result.errors,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/agents/pipeline':
+                try:
+                    from realai.agent_runtime import (
+                        PipelineRunner, PipelineDefinition, PipelineStep,
+                    )
+                    from realai import AgentRegistry
+                    pipeline_data = body.get("pipeline", {})
+                    steps = [
+                        PipelineStep(
+                            agent_id=s.get("agent_id", ""),
+                            task_template=s.get("task_template", "{input}"),
+                            input_key=s.get("input_key", "input"),
+                            output_key=s.get("output_key", "output"),
+                        )
+                        for s in pipeline_data.get("steps", [])
+                    ]
+                    pipeline = PipelineDefinition(
+                        id=pipeline_data.get("id", "pipeline-1"),
+                        name=pipeline_data.get("name", "Pipeline"),
+                        steps=steps,
+                        description=pipeline_data.get("description", ""),
+                    )
+                    registry = AgentRegistry()
+                    runner = PipelineRunner()
+                    result = runner.run(pipeline, body.get("input", ""), registry)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/agents/graph':
+                try:
+                    from realai.agent_runtime import AgentGraph, AgentNode, AgentEdge
+                    from realai import AgentRegistry
+                    graph = AgentGraph()
+                    for node_data in body.get("nodes", []):
+                        graph.add_node(AgentNode(
+                            agent_id=node_data.get("agent_id", ""),
+                            task_template=node_data.get("task_template", "{input}"),
+                        ))
+                    for edge_data in body.get("edges", []):
+                        graph.add_edge(AgentEdge(
+                            from_node=edge_data.get("from_node", ""),
+                            to_node=edge_data.get("to_node", ""),
+                            condition=edge_data.get("condition"),
+                        ))
+                    registry = AgentRegistry()
+                    result = graph.execute(body.get("input", ""), registry)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/memory/store':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    item_id = MEMORY_ENGINE.store(
+                        content=body.get("content", ""),
+                        tags=body.get("tags", []),
+                        namespace=body.get("namespace", "default"),
+                    )
+                    self._send_response(200, {"item_id": item_id, "status": "stored"})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/memory/forget':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    success = MEMORY_ENGINE.forget(body.get("item_id", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/plugins/install':
+                try:
+                    from realai.plugin_marketplace import PluginDiscovery, PluginManifest
+                    manifest_data = body.get("manifest", {})
+                    manifest = PluginManifest(
+                        name=manifest_data.get("name", ""),
+                        version=manifest_data.get("version", "0.0.0"),
+                        author=manifest_data.get("author", ""),
+                        description=manifest_data.get("description", ""),
+                        permissions=manifest_data.get("permissions", []),
+                        signature=manifest_data.get("signature", ""),
+                        homepage=manifest_data.get("homepage", ""),
+                    )
+                    discovery = PluginDiscovery()
+                    success = discovery.install(manifest)
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/plugins/uninstall':
+                try:
+                    from realai.plugin_marketplace import PluginDiscovery
+                    discovery = PluginDiscovery()
+                    success = discovery.uninstall(body.get("name", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/knowledge/ingest':
+                try:
+                    from realai.knowledge_graph import (
+                        KNOWLEDGE_GRAPH, Entity, Relationship,
+                    )
+                    for ent_data in body.get("entities", []):
+                        KNOWLEDGE_GRAPH.add_entity(Entity(
+                            id=ent_data.get("id", ""),
+                            name=ent_data.get("name", ""),
+                            entity_type=ent_data.get("entity_type", "unknown"),
+                            attributes=ent_data.get("attributes", {}),
+                        ))
+                    for rel_data in body.get("relationships", []):
+                        KNOWLEDGE_GRAPH.add_relationship(Relationship(
+                            id=rel_data.get("id", ""),
+                            subject_id=rel_data.get("subject_id", ""),
+                            predicate=rel_data.get("predicate", ""),
+                            object_id=rel_data.get("object_id", ""),
+                            confidence=rel_data.get("confidence", 1.0),
+                            source=rel_data.get("source", ""),
+                        ))
+                    self._send_response(200, {
+                        "status": "ingested",
+                        "stats": KNOWLEDGE_GRAPH.stats(),
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/knowledge/synthesize':
+                try:
+                    from realai.knowledge_graph import KNOWLEDGE_GRAPH, SynthesisEngine
+                    engine = SynthesisEngine()
+                    result = engine.answer(body.get("query", ""), KNOWLEDGE_GRAPH)
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/world/goal':
+                try:
+                    from realai.world_model import GOAL_TRACKER
+                    goal = GOAL_TRACKER.add_goal(
+                        description=body.get("description", ""),
+                        sub_goals=body.get("sub_goals", []),
+                        deadline=body.get("deadline"),
+                    )
+                    self._send_response(200, {
+                        "goal_id": goal.id,
+                        "description": goal.description,
+                        "status": goal.status,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/world/observe':
+                try:
+                    from realai.world_model import WORLD_STATE, BeliefUpdater, Observation
+                    import time as _time
+                    import uuid as _uuid
+                    obs = Observation(
+                        id=str(_uuid.uuid4()),
+                        content=body.get("content", ""),
+                        confidence=body.get("confidence", 1.0),
+                        source=body.get("source", ""),
+                        timestamp=_time.time(),
+                    )
+                    updater = BeliefUpdater()
+                    updater.update(WORLD_STATE, obs)
+                    self._send_response(200, {
+                        "status": "observed",
+                        "observation_id": obs.id,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/personas':
+                try:
+                    from realai.identity import IDENTITY_MANAGER
+                    persona = IDENTITY_MANAGER.create(
+                        name=body.get("name", ""),
+                        description=body.get("description", ""),
+                        system_prompt=body.get("system_prompt", ""),
+                        tone=body.get("tone", "balanced"),
+                    )
+                    self._send_response(200, {
+                        "id": persona.id,
+                        "name": persona.name,
+                        "tone": persona.tone,
+                    })
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
+            elif parsed_path.path == '/v1/personas/activate':
+                try:
+                    from realai.identity import PERSONA_SWITCHER
+                    result = PERSONA_SWITCHER.switch_to(body.get("persona_id", ""))
+                    self._send_response(200, result)
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+
             else:
                 self._send_response(404, {"error": "Endpoint not found"})
 
@@ -890,6 +1185,25 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         """Log API requests."""
         print(f"[{self.log_date_time_string()}] {format % args}")
+
+    def do_DELETE(self):
+        """Handle DELETE requests."""
+        parsed_path = urlparse(self.path)
+        try:
+            body = self._read_body()
+            if parsed_path.path == '/v1/memory/forget':
+                try:
+                    from realai.memory.engine import MEMORY_ENGINE
+                    success = MEMORY_ENGINE.forget(body.get("item_id", ""))
+                    self._send_response(200, {"success": success})
+                except Exception as e:
+                    self._send_response(500, {"error": str(e)})
+            else:
+                self._send_response(404, {"error": "Not found"})
+        except json.JSONDecodeError:
+            self._send_response(400, {"error": "Invalid JSON"})
+        except Exception as e:
+            self._send_response(500, {"error": str(e)})
 
 
 def run_server(host: str = "0.0.0.0", port: int = 8000):
