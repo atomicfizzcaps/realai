@@ -89,6 +89,297 @@ class AgentExecutionStatus(Enum):
     CANCELLED = "cancelled"
 
 
+# ---------------------------------------------------------------------------
+# ExecutionRuntime — lifecycle tracking, SSE event bus, JSONL audit log
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ExecutionEvent:
+    """A single lifecycle event emitted during an agent execution."""
+    execution_id: str
+    agent_id: str
+    event_type: str          # dispatch | progress | complete | error
+    timestamp: str
+    data: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "execution_id": self.execution_id,
+            "agent_id": self.agent_id,
+            "event_type": self.event_type,
+            "timestamp": self.timestamp,
+            "data": self.data,
+        }
+
+
+class ExecutionRuntime:
+    """Thread-safe execution runtime with SSE fan-out and JSONL persistence.
+
+    Drop-in complement to ``AgentRegistry``.  Call::
+
+        runtime = ExecutionRuntime()
+        eid = runtime.create()
+        runtime.start(eid, agent_id="architect", task="...", risk_level="low")
+        runtime.progress(eid, 0.5, "halfway there")
+        runtime.complete(eid, result="done")
+        # or
+        runtime.fail(eid, error="something broke")
+
+    Subscribers receive every ``ExecutionEvent`` in real time — the API
+    server's ``/events`` SSE endpoint calls ``subscribe()`` / ``unsubscribe()``.
+    """
+
+    def __init__(self, history_file: Optional[str] = None) -> None:
+        self._lock = threading.Lock()
+        self._subscribers: List[Any] = []          # queue.Queue instances
+        self._history_file = history_file
+        if history_file:
+            os.makedirs(os.path.dirname(history_file) or ".", exist_ok=True)
+
+    # ------------------------------------------------------------------
+    # Subscriber management (for SSE)
+    # ------------------------------------------------------------------
+
+    def subscribe(self) -> "Any":
+        """Return a ``queue.Queue`` that will receive every future event."""
+        import queue
+        q: "queue.Queue[Dict[str, Any]]" = queue.Queue(maxsize=100)
+        with self._lock:
+            self._subscribers.append(q)
+        return q
+
+    def unsubscribe(self, q: "Any") -> None:
+        with self._lock:
+            try:
+                self._subscribers.remove(q)
+            except ValueError:
+                pass
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _now(self) -> str:
+        from datetime import datetime, timezone
+        return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+    def _emit(self, event: ExecutionEvent) -> None:
+        event_dict = event.to_dict()
+        with self._lock:
+            subs = list(self._subscribers)
+        for q in subs:
+            try:
+                q.put_nowait(event_dict)
+            except Exception:
+                pass  # full queues are silently dropped
+        self._persist(event_dict)
+
+    def _persist(self, event_dict: Dict[str, Any]) -> None:
+        if not self._history_file:
+            return
+        try:
+            with open(self._history_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(event_dict) + "\n")
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # Public lifecycle API
+    # ------------------------------------------------------------------
+
+    def create(self) -> str:
+        """Allocate a new execution ID."""
+        return str(uuid.uuid4())
+
+    def start(self, execution_id: str, agent_id: str, task: str,
+              risk_level: str = "medium", profile: str = "balanced") -> None:
+        """Emit a ``dispatch`` event — execution has started."""
+        self._emit(ExecutionEvent(
+            execution_id=execution_id,
+            agent_id=agent_id,
+            event_type="dispatch",
+            timestamp=self._now(),
+            data={"task": task, "risk_level": risk_level, "profile": profile},
+        ))
+
+    def progress(self, execution_id: str, agent_id: str,
+                 pct: float, message: str = "") -> None:
+        """Emit a ``progress`` event (pct between 0.0 and 1.0)."""
+        self._emit(ExecutionEvent(
+            execution_id=execution_id,
+            agent_id=agent_id,
+            event_type="progress",
+            timestamp=self._now(),
+            data={"progress": pct, "message": message},
+        ))
+
+    def complete(self, execution_id: str, agent_id: str,
+                 duration_ms: int, result: str = "") -> None:
+        """Emit a ``complete`` event."""
+        self._emit(ExecutionEvent(
+            execution_id=execution_id,
+            agent_id=agent_id,
+            event_type="complete",
+            timestamp=self._now(),
+            data={"duration_ms": duration_ms, "result_preview": result[:200]},
+        ))
+
+    def fail(self, execution_id: str, agent_id: str,
+             duration_ms: int, error: str = "") -> None:
+        """Emit an ``error`` event."""
+        self._emit(ExecutionEvent(
+            execution_id=execution_id,
+            agent_id=agent_id,
+            event_type="error",
+            timestamp=self._now(),
+            data={"duration_ms": duration_ms, "error": error},
+        ))
+
+
+# Global runtime instance — shared by AgentRegistry and the API server
+_execution_runtime = ExecutionRuntime(
+    history_file=os.path.join(
+        os.path.dirname(__file__),
+        "execution_history.jsonl"
+    )
+)
+
+
+# ---------------------------------------------------------------------------
+# Tool Call Protocol — structured tool invocation format
+# ---------------------------------------------------------------------------
+
+@dataclass
+class ToolCall:
+    """Represents a single structured tool invocation from a model response.
+
+    Models that support tool calling return one or more ``ToolCall`` objects
+    embedded in their response.  The ``AgentExecutor`` (or any caller) should
+    parse these, check permissions via the safety layer, execute the tool, and
+    append the result as a ``tool`` role message before the next model turn.
+    """
+    id: str                              # unique call ID within the response
+    tool: str                            # tool name (must match registry key)
+    arguments: Dict[str, Any] = field(default_factory=dict)
+    result: Optional[str] = None         # populated after execution
+    error: Optional[str] = None          # populated if execution fails
+
+    def to_dict(self) -> Dict[str, Any]:
+        d: Dict[str, Any] = {
+            "id": self.id,
+            "type": "function",
+            "function": {
+                "name": self.tool,
+                "arguments": json.dumps(self.arguments),
+            },
+        }
+        if self.result is not None:
+            d["result"] = self.result
+        if self.error is not None:
+            d["error"] = self.error
+        return d
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ToolCall":
+        fn = data.get("function", {})
+        raw_args = fn.get("arguments", "{}")
+        if isinstance(raw_args, str):
+            try:
+                raw_args = json.loads(raw_args)
+            except (json.JSONDecodeError, ValueError):
+                raw_args = {}
+        return cls(
+            id=data.get("id", str(uuid.uuid4())),
+            tool=fn.get("name", data.get("tool", "")),
+            arguments=raw_args,
+            result=data.get("result"),
+            error=data.get("error"),
+        )
+
+
+# ---------------------------------------------------------------------------
+# SelfCritiqueEngine — retry / reflection loop
+# ---------------------------------------------------------------------------
+
+class SelfCritiqueEngine:
+    """Adds a lightweight self-critique pass to any agent execution.
+
+    After a result is produced the engine scores it against a set of quality
+    signals (length, keyword blocklist, presence of error markers).  If the
+    score is below ``threshold`` and there are retries remaining, the engine
+    will call the executor again with the original task plus a critique prefix.
+
+    Example::
+
+        engine = SelfCritiqueEngine(max_retries=2)
+        final = engine.run(executor_fn=lambda t: agent.execute(t), task="...")
+    """
+
+    _ERROR_MARKERS = ("error:", "failed:", "exception:", "traceback")
+    _MIN_RESULT_LEN = 20
+
+    def __init__(self, max_retries: int = 2, threshold: float = 0.6) -> None:
+        self.max_retries = max_retries
+        self.threshold = threshold
+
+    def _score(self, result: str) -> float:
+        """Return a quality score between 0.0 (poor) and 1.0 (good)."""
+        if not result or len(result) < self._MIN_RESULT_LEN:
+            return 0.0
+        lower = result.lower()
+        for marker in self._ERROR_MARKERS:
+            if marker in lower:
+                return 0.2
+        # Simple heuristic: longer, richer results score higher (capped at 1)
+        length_score = min(len(result) / 500, 1.0)
+        return 0.5 + length_score * 0.5
+
+    def run(
+        self,
+        executor_fn: Callable[[str], str],
+        task: str,
+        on_critique: Optional[Callable[[int, str, float], None]] = None,
+    ) -> str:
+        """Run ``executor_fn(task)``, retrying with critique if quality is low.
+
+        Args:
+            executor_fn: Callable that takes a task string and returns a result.
+            task: The original task description.
+            on_critique: Optional callback invoked on each retry with
+                         ``(attempt, result, score)`` so callers can log.
+
+        Returns:
+            The best result produced (highest scoring across all attempts).
+        """
+        best_result = ""
+        best_score = -1.0
+
+        current_task = task
+        for attempt in range(self.max_retries + 1):
+            result = executor_fn(current_task)
+            score = self._score(result)
+
+            if score > best_score:
+                best_score = score
+                best_result = result
+
+            if score >= self.threshold or attempt == self.max_retries:
+                break
+
+            if on_critique:
+                on_critique(attempt, result, score)
+
+            # Build critique prefix for next attempt
+            current_task = (
+                f"[Self-critique: previous attempt scored {score:.2f}/1.0 — "
+                f"the result was insufficient. Improve upon it.]\n\n"
+                f"Original task: {task}\n\n"
+                f"Previous result (to improve):\n{result[:400]}"
+            )
+
+        return best_result
+
+
 @dataclass
 class AccessProfile:
     """Security profile defining agent capabilities and restrictions."""
@@ -375,12 +666,41 @@ class AgentRegistry:
         }
 
     def execute_agent(self, agent_id: str, task: str, **kwargs) -> str:
-        """Execute an agent with a given task."""
+        """Execute an agent with lifecycle tracking via ExecutionRuntime.
+
+        Access check
+        ------------
+        Before running, we assess the recommended profile against the agent's
+        required tools.  If any tools are missing a warning is logged via a
+        ``dispatch`` event so the caller can address the gap without blocking
+        execution (non-blocking by design — same as ``agentx check``).
+        """
         agent = self.get_agent(agent_id)
         if not agent:
             return f"Agent '{agent_id}' not found"
 
-        execution_id = str(uuid.uuid4())
+        # --- access check ------------------------------------------------
+        recommended_profile = self.recommend_profile(agent)
+        access = self.assess_access(agent, recommended_profile)
+        if not access["pass"]:
+            # Non-blocking warning: log via runtime event
+            _execution_runtime._emit(ExecutionEvent(
+                execution_id="access-check",
+                agent_id=agent_id,
+                event_type="warning",
+                timestamp=_execution_runtime._now(),
+                data={
+                    "message": f"Agent '{agent_id}' is missing tools in profile "
+                               f"'{recommended_profile.name}': {access['missing_tools']}",
+                    "missing_tools": access["missing_tools"],
+                    "recommended_profile": access["recommended_profile"],
+                },
+            ))
+
+        # --- execution lifecycle -----------------------------------------
+        execution_id = _execution_runtime.create()
+        start_ms = int(time.time() * 1000)
+
         execution = AgentExecution(
             execution_id=execution_id,
             agent_id=agent_id,
@@ -388,18 +708,34 @@ class AgentRegistry:
             status=AgentExecutionStatus.RUNNING,
             start_time=time.time()
         )
-
         self.active_executions[execution_id] = execution
 
+        _execution_runtime.start(
+            execution_id, agent_id=agent_id, task=task,
+            risk_level=agent.risk_level,
+            profile=recommended_profile.name,
+        )
+
         try:
-            # Route to appropriate RealAI capability based on agent
+            _execution_runtime.progress(execution_id, agent_id=agent_id, pct=0.1,
+                                        message="routing to capability")
             result = self._route_agent_execution(agent, task, **kwargs)
             execution.status = AgentExecutionStatus.COMPLETED
             execution.result = result
+            _execution_runtime.complete(
+                execution_id, agent_id=agent_id,
+                duration_ms=int(time.time() * 1000) - start_ms,
+                result=str(result),
+            )
         except Exception as e:
             execution.status = AgentExecutionStatus.FAILED
             execution.error = str(e)
             result = f"Agent execution failed: {e}"
+            _execution_runtime.fail(
+                execution_id, agent_id=agent_id,
+                duration_ms=int(time.time() * 1000) - start_ms,
+                error=str(e),
+            )
         finally:
             execution.end_time = time.time()
             self.execution_history.append(execution)
@@ -552,7 +888,7 @@ class AgentRegistry:
         })
         return f"Expansion Plan:\n{result}"
 
-
+    def _generic_agent_task(self, agent: AgentDefinition, task: str, **kwargs) -> str:
         """Handle generic agent tasks based on capabilities."""
         # Route based on agent capabilities
         if "reasoning" in agent.capabilities:
@@ -608,6 +944,11 @@ class AgentRegistry:
     def get_execution_history(self, limit: int = 10) -> List[AgentExecution]:
         """Get recent execution history."""
         return self.execution_history[-limit:]
+
+    @staticmethod
+    def get_execution_runtime() -> "ExecutionRuntime":
+        """Return the shared global ExecutionRuntime instance."""
+        return _execution_runtime
 
 
 # Global agent registry instance
@@ -8776,6 +9117,22 @@ class RealAI:
             if correction_dataset:
                 policy_updates.append(f"Fine-tune on {len(correction_dataset)} corrected examples")
 
+            # --- self-improvement loop -----------------------------------
+            # Each corrected example is persisted via learn_from_interaction
+            # so it feeds back into self_reflect and future responses.
+            for entry in correction_dataset:
+                try:
+                    self.learn_from_interaction({
+                        "messages": [
+                            {"role": "user", "content": entry["input"]},
+                            {"role": "assistant", "content": entry["correction"]},
+                        ],
+                        "source": "feedback_learning",
+                        "policy_target": policy_target,
+                    })
+                except Exception:
+                    pass  # learning errors must not break the main result
+
             result = {
                 "status": "success",
                 "feedback_processed": len(feedback_items),
@@ -8821,6 +9178,21 @@ class RealAI:
         try:
             if sources is None:
                 sources = []
+
+            # Auto-populate sources from web_research cache when none provided.
+            # This ensures callers get real retrieved evidence without extra work.
+            if not sources:
+                try:
+                    web_result = self.web_research(query=query, depth="standard")
+                    auto_sources = []
+                    for finding in web_result.get("findings", []):
+                        url = finding.get("url", "")
+                        snippet = finding.get("snippet", finding.get("content", ""))
+                        if url or snippet:
+                            auto_sources.append({"text": snippet, "url": url})
+                    sources = auto_sources
+                except Exception:
+                    pass  # network unavailable — proceed with empty sources
 
             # Rank sources by relevance (keyword overlap with query)
             query_words = set(query.lower().split())

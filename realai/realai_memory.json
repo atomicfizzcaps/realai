@@ -135,8 +135,203 @@
       },
       "patterns": [],
       "adaptations": []
+    },
+    {
+      "timestamp": 1778054871,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
+    },
+    {
+      "timestamp": 1778054871,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Wrong answer about capital"
+          },
+          {
+            "role": "assistant",
+            "content": "Paris is the capital of France"
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054956,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
+    },
+    {
+      "timestamp": 1778054957,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Wrong answer about capital"
+          },
+          {
+            "role": "assistant",
+            "content": "Paris is the capital of France"
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054957,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 2+2?"
+          },
+          {
+            "role": "assistant",
+            "content": "2+2 equals 4."
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054957,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What color is the sky?"
+          },
+          {
+            "role": "assistant",
+            "content": "The sky is blue."
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054962,
+      "data": {
+        "test": "data"
+      },
+      "patterns": [],
+      "adaptations": []
+    },
+    {
+      "timestamp": 1778054962,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "Wrong answer about capital"
+          },
+          {
+            "role": "assistant",
+            "content": "Paris is the capital of France"
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054962,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What is 2+2?"
+          },
+          {
+            "role": "assistant",
+            "content": "2+2 equals 4."
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
+    },
+    {
+      "timestamp": 1778054962,
+      "data": {
+        "messages": [
+          {
+            "role": "user",
+            "content": "What color is the sky?"
+          },
+          {
+            "role": "assistant",
+            "content": "The sky is blue."
+          }
+        ],
+        "source": "feedback_learning",
+        "policy_target": "accuracy"
+      },
+      "patterns": [
+        "Concise questions"
+      ],
+      "adaptations": [
+        "Keep responses focused"
+      ]
     }
   ],
-  "patterns": {},
-  "adaptations": []
+  "patterns": {
+    "Concise questions": 7
+  },
+  "adaptations": [
+    "Keep responses focused",
+    "Keep responses focused",
+    "Keep responses focused",
+    "Keep responses focused",
+    "Keep responses focused",
+    "Keep responses focused",
+    "Keep responses focused"
+  ]
 }
