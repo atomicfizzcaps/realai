@@ -679,13 +679,17 @@ class AgentRegistry:
         if not agent:
             return f"Agent '{agent_id}' not found"
 
+        # --- execution lifecycle -----------------------------------------
+        execution_id = _execution_runtime.create()
+        start_ms = int(time.time() * 1000)
+
         # --- access check ------------------------------------------------
         recommended_profile = self.recommend_profile(agent)
         access = self.assess_access(agent, recommended_profile)
         if not access["pass"]:
-            # Non-blocking warning: log via runtime event
+            # Non-blocking warning: log via runtime event using the real execution_id
             _execution_runtime._emit(ExecutionEvent(
-                execution_id="access-check",
+                execution_id=execution_id,
                 agent_id=agent_id,
                 event_type="warning",
                 timestamp=_execution_runtime._now(),
@@ -696,10 +700,6 @@ class AgentRegistry:
                     "recommended_profile": access["recommended_profile"],
                 },
             ))
-
-        # --- execution lifecycle -----------------------------------------
-        execution_id = _execution_runtime.create()
-        start_ms = int(time.time() * 1000)
 
         execution = AgentExecution(
             execution_id=execution_id,

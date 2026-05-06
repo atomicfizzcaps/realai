@@ -2546,7 +2546,11 @@ def test_feedback_learning_persists_to_memory():
     print("Testing feedback_learning → learn_from_interaction loop...")
     import os, json
     model = RealAI()
-    memory_file = os.path.join(os.path.dirname(model.__class__.__module__), 'realai', 'realai_memory.json')
+    # Resolve the actual realai package directory for the memory file
+    realai_pkg_dir = os.path.dirname(os.path.abspath(
+        __import__('realai').__file__
+    ))
+    memory_file = os.path.join(realai_pkg_dir, 'realai_memory.json')
     # Record baseline interaction count
     baseline = 0
     if os.path.exists(memory_file):
