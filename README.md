@@ -126,6 +126,9 @@ realai/
 - `python -m realai.server.app` starts the minimal structured inference server with no extra dependencies.
 - If you prefer an ASGI stack, install `uvicorn` and point it at `realai.server.app:app`.
 - The structured server exposes `POST /v1/chat/completions`, `POST /v1/embeddings`, `GET /health`, and `GET /metrics`.
+- `realai/models/registry.json` is the provider model registry; it now maps chat models to vLLM backends and embeddings to Hugging Face sentence-transformers, with graceful local fallbacks when optional ML packages are not installed.
+- `realai/sdk/python/realai_client.py` and `realai/cli/realai_cli.py` call the structured server over HTTP so the SDK, CLI, and frontend can share the same provider surface.
+- To run the provider stack locally, install the optional server dependencies (`fastapi`, `uvicorn`, `vllm`, `sentence-transformers`, `prometheus_client`, `click`) and start `uvicorn realai.server.app:app --reload --port 8000`.
 
 ```python
 from realai import RealAIClient

@@ -7,10 +7,12 @@ from .router import dispatch_request
 
 try:
     from fastapi import FastAPI, HTTPException
+    from fastapi.responses import Response
     from pydantic import BaseModel
 except ImportError:
     FastAPI = None
     HTTPException = None
+    Response = None
     BaseModel = None
 
 
@@ -35,9 +37,7 @@ class _ASGIApplication(object):
             try:
                 payload = json.loads(body.decode('utf-8'))
             except ValueError:
-                status_code = 400
-                data = {'error': {'message': 'Request body must be valid JSON.'}}
-                await _send_json(send, status_code, data)
+                await _send_json(send, 400, {'error': {'message': 'Request body must be valid JSON.'}})
                 return
 
         status_code, data, content_type = dispatch_request(
@@ -94,33 +94,26 @@ if FastAPI is not None and BaseModel is not None:
         input: list
 
 
-    _fastapi_app = FastAPI(title='RealAI')
+    app = FastAPI(title='RealAI Provider')
 
-    @_fastapi_app.get('/health')
-    def health():
-        status_code, data, _ = dispatch_request('GET', '/health')
-        return data
-
-    @_fastapi_app.get('/metrics')
-    def metrics():
-        status_code, data, _ = dispatch_request('GET', '/metrics')
-        return data
-
-    @_fastapi_app.post('/v1/chat/completions')
+    @app.post('/v1/chat/completions')
     def chat(request: ChatRequest):
-        status_code, data, _ = dispatch_request('POST', '/v1/chat/completions', request.dict())
-        if status_code >= 400 and HTTPException is not None:
-            raise HTTPException(status_code=status_code, detail=data.get('error', {}).get('message', 'Unknown error'))
-        return data
+        return dispatch_request('POST', '/v1/chat/completions', request.dict())[1]
 
-    @_fastapi_app.post('/v1/embeddings')
+    @app.post('/v1/embeddings')
     def embeddings(request: EmbeddingRequest):
-        status_code, data, _ = dispatch_request('POST', '/v1/embeddings', request.dict())
-        if status_code >= 400 and HTTPException is not None:
-            raise HTTPException(status_code=status_code, detail=data.get('error', {}).get('message', 'Unknown error'))
-        return data
+        return dispatch_request('POST', '/v1/embeddings', request.dict())[1]
 
-    app = _fastapi_app
+    @app.get('/health')
+    def health():
+        return dispatch_request('GET', '/health')[1]
+
+    @app.get('/metrics')
+    def metrics():
+        status_code, data, content_type = dispatch_request('GET', '/metrics')
+        if Response is not None:
+            return Response(content=data, media_type=content_type)
+        return data
 else:
     app = _ASGIApplication()
 
@@ -141,7 +134,6 @@ def wsgi_app(environ, start_response):
             try:
                 payload = json.loads(raw_body.decode('utf-8'))
             except ValueError:
-                status_code = 400
                 body = json.dumps({'error': {'message': 'Request body must be valid JSON.'}}).encode('utf-8')
                 start_response('400 Bad Request', [
                     ('Content-Type', 'application/json'),
@@ -150,10 +142,7 @@ def wsgi_app(environ, start_response):
                 return [body]
 
     status_code, data, content_type = dispatch_request(method, path, payload)
-    if content_type.startswith('application/json'):
-        body = json.dumps(data).encode('utf-8')
-    else:
-        body = data.encode('utf-8')
+    body = json.dumps(data).encode('utf-8') if content_type.startswith('application/json') else data.encode('utf-8')
     start_response('{0} {1}'.format(status_code, _reason_phrase(status_code)), [
         ('Content-Type', content_type),
         ('Content-Length', str(len(body))),
