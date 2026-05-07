@@ -48,21 +48,21 @@ def check(name: str, fn):  # type: ignore[no-untyped-def]
 # ── checks ───────────────────────────────────────────────────────────────────
 
 def _check_imports() -> None:
-    from agent_tools.engine.executor import AgentExecutor, ExecutionResult  # noqa: F401
-    from agent_tools.engine.memory import (  # noqa: F401
+    from realai_core.engine.executor import AgentExecutor, ExecutionResult  # noqa: F401
+    from realai_core.engine.memory import (  # noqa: F401
         ChromaVectorMemoryAdapter,
         JsonFileMemoryAdapter,
         SQLiteMemoryAdapter,
         VectorMemoryAdapter,
         create_memory_adapter,
     )
-    from agent_tools.providers.realai import RealAIProvider  # noqa: F401
-    from agent_tools.providers.realai_embeddings import RealAIEmbeddings  # noqa: F401
-    from agent_tools.providers.router import ProviderRouter  # noqa: F401
+    from realai_core.providers.realai import RealAIProvider  # noqa: F401
+    from realai_core.providers.realai_embeddings import RealAIEmbeddings  # noqa: F401
+    from realai_core.providers.router import ProviderRouter  # noqa: F401
 
 
 def _check_manifests() -> None:
-    from agent_tools.engine.loader import AgentManifestLoader
+    from realai_core.engine.loader import AgentManifestLoader
 
     repo_root = Path(__file__).parent
     loader = AgentManifestLoader(repo_root / "agents")
@@ -78,7 +78,7 @@ def _check_manifests() -> None:
 
 
 def _check_memory_adapters(tmp_path: Path) -> None:
-    from agent_tools.engine.memory import (
+    from realai_core.engine.memory import (
         ChromaVectorMemoryAdapter,
         JsonFileMemoryAdapter,
         SQLiteMemoryAdapter,
@@ -114,7 +114,7 @@ def _check_memory_adapters(tmp_path: Path) -> None:
 
 
 def _check_provider_router() -> None:
-    from agent_tools.providers.router import ProviderRouter
+    from realai_core.providers.router import ProviderRouter
 
     router = ProviderRouter()
     assert hasattr(router, "_providers"), "ProviderRouter missing _providers"
@@ -122,7 +122,7 @@ def _check_provider_router() -> None:
 
 
 def _check_dry_run_basic() -> None:
-    from agent_tools.engine.executor import AgentExecutor
+    from realai_core.engine.executor import AgentExecutor
 
     ex = AgentExecutor()
     r = ex.run(agent_id="code_engineer", input_text="Write a hello-world function", dry_run=True)
@@ -133,7 +133,7 @@ def _check_dry_run_basic() -> None:
 
 def _check_dry_run_session_continuity() -> None:
     """Second call in the same session should see the first call in context."""
-    from agent_tools.engine.executor import AgentExecutor
+    from realai_core.engine.executor import AgentExecutor
 
     ex = AgentExecutor()
     session = "sanity-session-1"
@@ -157,7 +157,7 @@ def _check_dry_run_session_continuity() -> None:
 
 
 def _check_execution_result_fields() -> None:
-    from agent_tools.engine.executor import AgentExecutor
+    from realai_core.engine.executor import AgentExecutor
 
     ex = AgentExecutor()
     r = ex.run(agent_id="task_planner", input_text="Plan a blog post", dry_run=True)
@@ -220,7 +220,7 @@ def main() -> None:
             print("\nLive provider check:")
 
             def _live_realai() -> None:
-                from agent_tools.engine.executor import AgentExecutor
+                from realai_core.engine.executor import AgentExecutor
                 ex = AgentExecutor()
                 r = ex.run(
                     agent_id="code_engineer",
