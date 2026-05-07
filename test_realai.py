@@ -295,9 +295,13 @@ def test_structured_server_config_files():
 def test_week2_inference_registry_routes():
     """Test week-2 app routes wired through inference registry."""
     print("Testing week-2 inference registry routes...")
-    from apps.api.routes.chat import chat_completions
-    from apps.api.routes.embeddings import embeddings
-    from apps.api.routes.models import list_models
+    try:
+        from apps.api.routes.chat import chat_completions
+        from apps.api.routes.embeddings import embeddings
+        from apps.api.routes.models import list_models
+    except ImportError:
+        print("✓ Week-2 inference registry routes skipped (FastAPI unavailable)")
+        return
     from core.api.schemas.chat import ChatCompletionRequest
     from core.api.schemas.embeddings import EmbeddingsRequest
 
@@ -322,6 +326,43 @@ def test_week2_inference_registry_routes():
     assert embed_resp['model'] == 'local-stub-embed'
     assert len(embed_resp['data']) == 2
     print("✓ Week-2 inference registry routes test passed")
+
+
+def test_week3_memory_and_tool_pipeline():
+    """Test chat pipeline memory retrieval + tool execution loop."""
+    print("Testing week-3 memory and tool pipeline...")
+    try:
+        from apps.api.routes.chat import chat_completions
+    except ImportError:
+        print("✓ Week-3 memory and tool pipeline skipped (FastAPI unavailable)")
+        return
+    from core.api.schemas.chat import ChatCompletionRequest
+    from core.memory.sqlite_store import SQLiteMemoryStore
+
+    user_id = "week3-user"
+    memory = SQLiteMemoryStore("realai_memory.sqlite3")
+    memory.clear(user_id)
+
+    tool_req = ChatCompletionRequest(
+        model="realai-default",
+        user_id=user_id,
+        messages=[{"role": "user", "content": "Search the web for solana staking yield"}],
+    )
+    tool_resp = chat_completions(tool_req)
+    assert "choices" in tool_resp
+    assert "tool result" in tool_resp["choices"][0]["message"]["content"].lower()
+
+    remember_req = ChatCompletionRequest(
+        model="realai-default",
+        user_id=user_id,
+        messages=[{"role": "user", "content": "Remember my dog's name is Pixel"}],
+    )
+    chat_completions(remember_req)
+
+    found = memory.search(user_id, "Pixel", k=3)
+    assert len(found) >= 1
+    assert any("pixel" in item["content"].lower() for item in found)
+    print("✓ Week-3 memory and tool pipeline test passed")
 
 
 def test_structured_training_pipeline():
@@ -3159,6 +3200,7 @@ def run_all_tests():
         test_structured_server_platform_endpoints,
         test_structured_server_config_files,
         test_week2_inference_registry_routes,
+        test_week3_memory_and_tool_pipeline,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,
