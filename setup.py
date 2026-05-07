@@ -32,6 +32,7 @@ setup(
     },
     py_modules=["api_server", "local_models", "main"],
     include_package_data=True,
+    package_data={"realai": ["models/*.json"]},
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",

@@ -388,7 +388,7 @@ Health check endpoint.
 ```
 
 #### GET /v1/models
-List available models.
+List available models from the registry, including family/tier/capability metadata.
 
 **Response:**
 ```json
@@ -399,14 +399,18 @@ List available models.
       "id": "realai-2.0",
       "object": "model",
       "created": 1708308000,
-      "owned_by": "realai"
+      "owned_by": "realai",
+      "display_name": "RealAI 2.0 General",
+      "family": "realai",
+      "tier": "general",
+      "capabilities": ["coding", "reasoning", "tool-calling"]
     }
   ]
 }
 ```
 
 #### GET /v1/capabilities
-Return the canonical capability catalog grouped by domain.
+Return the registry-backed capability catalog, capability graph, default model, model summaries, and routing policies.
 
 #### GET /v1/providers/capabilities?provider=<name>
 Return capability support/limitations for a provider.
