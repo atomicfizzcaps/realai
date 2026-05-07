@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from agent_tools.engine.executor import AgentExecutor
-from agent_tools.engine.loader import AgentManifestLoader, validate_agent_manifest
-from agent_tools.providers.router import ProviderRouter
+from realai_core.engine.executor import AgentExecutor
+from realai_core.engine.loader import AgentManifestLoader, validate_agent_manifest
+from realai_core.providers.router import ProviderRouter
 
 
 def _repo_root() -> Path:
