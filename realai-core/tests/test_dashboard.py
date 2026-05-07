@@ -1,4 +1,4 @@
-"""Tests for agent_tools.dashboard."""
+"""Tests for realai_core.dashboard."""
 from __future__ import annotations
 
 import json
@@ -10,14 +10,14 @@ from pathlib import Path
 
 import pytest
 
-from agent_tools.dashboard import (
+from realai_core.dashboard import (
     DashboardHandler,
     _EventBus,
     _ThreadingHTTPServer,
     build_graph_data,
     serve,
 )
-from agent_tools.registry import load_agents, load_profiles
+from realai_core.registry import load_agents, load_profiles
 
 
 # ── build_graph_data ──────────────────────────────────────────────────────────
