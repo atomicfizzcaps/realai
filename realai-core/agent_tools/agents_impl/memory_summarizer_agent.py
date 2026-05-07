@@ -8,7 +8,7 @@ semantic retrieval by subsequent executor calls.
 Typical usage::
 
     from pathlib import Path
-    from agent_tools.agents_impl.memory_summarizer_agent import MemorySummarizerAgent
+    from realai_core.agents_impl.memory_summarizer_agent import MemorySummarizerAgent
 
     agent = MemorySummarizerAgent(repo_root=Path.cwd())
     summaries = agent.summarize_session("my-session-id")
@@ -45,7 +45,7 @@ class MemorySummarizerAgent:
                              Pass ``"chroma"`` for persistent storage.
         embeddings_provider: Optional provider with ``.embed()`` for semantic
                              indexing.  Passed through to
-                             :func:`~agent_tools.engine.memory.create_memory_adapter`.
+                             :func:`~realai_core.engine.memory.create_memory_adapter`.
         provider:            Optional pre-built :class:`RealAIProvider` instance.
                              Defaults to a freshly constructed one (which will
                              use ``REALAI_API_URL`` / ``REALAI_API_KEY`` env vars).
