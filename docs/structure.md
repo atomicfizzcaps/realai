@@ -9,6 +9,8 @@ realai/
         embeddings.py
         models.py
         tasks.py
+        audio.py
+        voice_ws.py
   core/
     __init__.py
     api/
@@ -19,6 +21,7 @@ realai/
         embeddings.py
         models.py
         tasks.py
+        audio.py
       errors.py
     config/
       __init__.py
@@ -36,6 +39,13 @@ realai/
       local_stub.py
       vllm_backend.py
       llamacpp_backend.py
+    voice/
+      __init__.py
+      asr_base.py
+      asr_whisper.py
+      tts_base.py
+      tts_piper.py
+      registry.py
     agents/
       __init__.py
       base.py
