@@ -365,6 +365,28 @@ def test_week3_memory_and_tool_pipeline():
     print("✓ Week-3 memory and tool pipeline test passed")
 
 
+def test_week5_voice_registry_backends():
+    """Test week-5 voice registry and fallback backends."""
+    print("Testing week-5 voice registry/backends...")
+    from core.voice.asr_whisper import WhisperASR
+    from core.voice.registry import VoiceRegistry
+    from core.voice.tts_piper import PiperTTS
+
+    registry = VoiceRegistry()
+    asr = WhisperASR()
+    tts = PiperTTS()
+    registry.register_asr(asr)
+    registry.register_tts(tts)
+
+    transcribed = registry.get_asr("whisper-asr").transcribe(b"fake-audio")
+    assert "text" in transcribed
+
+    audio_bytes = registry.get_tts("piper-tts").synthesize("hello")
+    assert isinstance(audio_bytes, (bytes, bytearray))
+    assert len(audio_bytes) > 0
+    print("✓ Week-5 voice registry/backends test passed")
+
+
 def test_structured_training_pipeline():
     """Test training dataset extraction helpers."""
     print("Testing structured training pipeline...")
@@ -3201,6 +3223,7 @@ def run_all_tests():
         test_structured_server_config_files,
         test_week2_inference_registry_routes,
         test_week3_memory_and_tool_pipeline,
+        test_week5_voice_registry_backends,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,
