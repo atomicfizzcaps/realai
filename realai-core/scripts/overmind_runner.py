@@ -27,7 +27,7 @@ import json
 import sys
 from typing import Any
 
-from agent_tools.engine.executor import AgentExecutor
+from realai_core.engine.executor import AgentExecutor
 
 # Heuristic tag → agent routing table.
 # The Overmind may override this with explicit step assignments from the planner.
