@@ -5,10 +5,13 @@ import time
 from .config import get_model_config, list_model_objects, list_models, load_settings
 from .embeddings import embed
 from .inference import chat_completion
+from .logging_utils import setup_logging
 from .memory_store import MEMORY
 from .metrics import CONTENT_TYPE_LATEST, generate_latest
 from .orchestration import TASKS
 from .tools_runtime import TOOLS
+
+logger = setup_logging()
 
 
 class RequestValidationError(Exception):
@@ -93,6 +96,7 @@ def handle_chat_request(payload):
     payload = _require_dict(payload)
     model_name = _coalesce_model(payload, model_type='chat')
     messages = _require_messages(payload.get('messages'))
+    messages_for_inference = list(messages)
     temperature = _coerce_float('temperature', payload.get('temperature', 0.2), 0.2)
     max_tokens = _coerce_int('max_tokens', payload.get('max_tokens', 1024), 1024)
     stream = bool(payload.get('stream', False))
@@ -107,11 +111,11 @@ def handle_chat_request(payload):
         retrieved = MEMORY.retrieve(user_id, agent_id, str(messages[-1].get('content', '')), top_k=3)
     memory_context = '\n'.join(item.get('summary', '') for item in retrieved if item.get('summary'))
     if memory_context:
-        messages = list(messages) + [{'role': 'system', 'content': 'Relevant memory: {0}'.format(memory_context)}]
+        messages_for_inference.append({'role': 'system', 'content': 'Relevant memory: {0}'.format(memory_context)})
 
     return chat_completion(
         model_name,
-        messages,
+        messages_for_inference,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -183,7 +187,12 @@ def handle_models_list():
 
 
 def handle_model_read(path):
-    model_id = path.split('/v1/models/', 1)[1]
+    marker = '/v1/models/'
+    if marker not in path:
+        raise RequestValidationError('Invalid model path.')
+    model_id = path.split(marker, 1)[1]
+    if not model_id:
+        raise RequestValidationError('model_id is required.')
     cfg = get_model_config(model_id)
     return {
         'id': model_id,
@@ -242,7 +251,12 @@ def handle_tasks_list():
 
 
 def handle_task_read(path):
-    task_id = path.split('/v1/tasks/', 1)[1]
+    marker = '/v1/tasks/'
+    if marker not in path:
+        raise RequestValidationError('Invalid task path.')
+    task_id = path.split(marker, 1)[1]
+    if not task_id:
+        raise RequestValidationError('task_id is required.')
     return TASKS.get_task(task_id)
 
 
@@ -304,4 +318,5 @@ def dispatch_request(method, path, payload=None):
     except ValueError as exc:
         return 404, {'error': {'message': str(exc)}}, 'application/json'
     except Exception as exc:
-        return 500, {'error': {'message': str(exc)}}, 'application/json'
+        logger.exception('Unhandled server router exception: %s', exc)
+        return 500, {'error': {'message': 'Internal server error'}}, 'application/json'

@@ -3,6 +3,7 @@
 import json
 from wsgiref.simple_server import make_server
 
+from .logging_utils import setup_logging
 from .router import dispatch_request
 
 try:
@@ -123,71 +124,82 @@ if FastAPI is not None and BaseModel is not None:
 
     app = FastAPI(title='RealAI Provider')
 
+    def _dispatch_json(method, path, payload=None):
+        try:
+            status, data, _content_type = dispatch_request(method, path, payload)
+            if status >= 400 and HTTPException is not None:
+                message = data.get('error', {}).get('message', 'Request failed')
+                if status >= 500:
+                    message = 'Internal server error'
+                raise HTTPException(status_code=status, detail=message)
+            return data
+        except Exception as exc:
+            if HTTPException is not None and isinstance(exc, HTTPException):
+                raise
+            logger.exception('Unhandled app dispatch exception: %s', exc)
+            if HTTPException is not None:
+                raise HTTPException(status_code=500, detail='Internal server error')
+            return {'error': {'message': 'Internal server error'}}
+
     @app.post('/v1/chat/completions')
     def chat(request: ChatRequest):
-        return dispatch_request('POST', '/v1/chat/completions', request.dict())[1]
+        return _dispatch_json('POST', '/v1/chat/completions', request.dict())
 
     @app.post('/v1/embeddings')
     def embeddings(request: EmbeddingRequest):
-        return dispatch_request('POST', '/v1/embeddings', request.dict())[1]
+        return _dispatch_json('POST', '/v1/embeddings', request.dict())
 
     @app.get('/v1/models')
     def models():
-        return dispatch_request('GET', '/v1/models')[1]
+        return _dispatch_json('GET', '/v1/models')
 
     @app.get('/v1/models/{model_id}')
     def model_details(model_id: str):
-        status, data, _content_type = dispatch_request('GET', '/v1/models/{0}'.format(model_id))
-        if status >= 400 and HTTPException is not None:
-            raise HTTPException(status_code=status, detail=data.get('error', {}).get('message', 'error'))
-        return data
+        return _dispatch_json('GET', '/v1/models/{0}'.format(model_id))
 
     @app.post('/v1/images/generations')
     def image_generations(request: ImageGenerationRequest):
-        return dispatch_request('POST', '/v1/images/generations', request.dict())[1]
+        return _dispatch_json('POST', '/v1/images/generations', request.dict())
 
     @app.post('/v1/audio/transcriptions')
     def audio_transcriptions(request: AudioTranscriptionRequest):
-        return dispatch_request('POST', '/v1/audio/transcriptions', request.dict())[1]
+        return _dispatch_json('POST', '/v1/audio/transcriptions', request.dict())
 
     @app.post('/v1/audio/speech')
     def audio_speech(request: AudioSpeechRequest):
-        return dispatch_request('POST', '/v1/audio/speech', request.dict())[1]
+        return _dispatch_json('POST', '/v1/audio/speech', request.dict())
 
     @app.post('/v1/memory/store')
     def memory_store(request: MemoryStoreRequest):
-        return dispatch_request('POST', '/v1/memory/store', request.dict())[1]
+        return _dispatch_json('POST', '/v1/memory/store', request.dict())
 
     @app.post('/v1/memory/inspect')
     def memory_inspect(request: MemoryInspectRequest):
-        return dispatch_request('POST', '/v1/memory/inspect', request.dict())[1]
+        return _dispatch_json('POST', '/v1/memory/inspect', request.dict())
 
     @app.post('/v1/memory/clear')
     def memory_clear(request: MemoryInspectRequest):
-        return dispatch_request('POST', '/v1/memory/clear', request.dict())[1]
+        return _dispatch_json('POST', '/v1/memory/clear', request.dict())
 
     @app.get('/v1/tools')
     def tools():
-        return dispatch_request('GET', '/v1/tools')[1]
+        return _dispatch_json('GET', '/v1/tools')
 
     @app.post('/v1/tasks')
     def tasks_create(request: TaskRequest):
-        return dispatch_request('POST', '/v1/tasks', request.dict())[1]
+        return _dispatch_json('POST', '/v1/tasks', request.dict())
 
     @app.get('/v1/tasks')
     def tasks_list():
-        return dispatch_request('GET', '/v1/tasks')[1]
+        return _dispatch_json('GET', '/v1/tasks')
 
     @app.get('/v1/tasks/{task_id}')
     def tasks_get(task_id: str):
-        status, data, _content_type = dispatch_request('GET', '/v1/tasks/{0}'.format(task_id))
-        if status >= 400 and HTTPException is not None:
-            raise HTTPException(status_code=status, detail=data.get('error', {}).get('message', 'error'))
-        return data
+        return _dispatch_json('GET', '/v1/tasks/{0}'.format(task_id))
 
     @app.get('/health')
     def health():
-        return dispatch_request('GET', '/health')[1]
+        return _dispatch_json('GET', '/health')
 
     @app.get('/metrics')
     def metrics():
@@ -251,3 +263,4 @@ def main(host='0.0.0.0', port=8000):
 
 if __name__ == '__main__':
     main()
+logger = setup_logging()
