@@ -15,10 +15,10 @@ class ChatCompletionRequest(BaseModel):
     messages: List[ChatMessage]
     stream: Optional[bool] = False
     tools: Optional[List[Dict[str, Any]]] = None
+    user_id: Optional[str] = "default-user"
 
 
 class ChatCompletionResponse(BaseModel):
     id: str
     model: str
     choices: List[Dict[str, Any]]
-

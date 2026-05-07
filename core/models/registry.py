@@ -1,7 +1,7 @@
 """Model registry backed by models.yaml."""
 
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from core.config.loader import Config
 
@@ -30,7 +30,7 @@ def _coerce_models(raw: Any) -> List[Dict[str, Any]]:
 class ModelRegistry:
     """Load model metadata from a YAML registry file."""
 
-    def __init__(self, path: str | None = None):
+    def __init__(self, path: Optional[str] = None):
         cfg = Config()
         path = path or cfg.paths.models
         self.path = Path(path)
@@ -47,4 +47,3 @@ class ModelRegistry:
 
     def list_models(self):
         return _coerce_models(self.data)
-

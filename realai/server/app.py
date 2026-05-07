@@ -3,7 +3,6 @@
 import json
 from wsgiref.simple_server import make_server
 
-from .logging_utils import setup_logging
 from .router import dispatch_request
 
 try:
