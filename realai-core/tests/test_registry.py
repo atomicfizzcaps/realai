@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agent_tools.registry import assess_agent_access, find_agents, load_agents, load_profiles, recommend_profile
+from realai_core.registry import assess_agent_access, find_agents, load_agents, load_profiles, recommend_profile
 
 
 class TestTrainingFocusedAgents:

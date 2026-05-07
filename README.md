@@ -30,6 +30,8 @@ response = client.chat.create(
 
 **[📖 See QUICKSTART.md for full local AI setup](QUICKSTART.md)**
 
+**[🏗️ See docs/architecture.md for the RealAI Architecture Blueprint](docs/architecture.md)**
+
 ### Why Run Your Own AI?
 
 - 🔒 **100% Private** - Your data never leaves your machine
