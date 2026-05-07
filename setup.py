@@ -13,9 +13,26 @@ setup(
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/Unwrenchable/realai",
-    packages=find_packages(),
+    packages=find_packages() + [
+        # realai_core packages are not auto-discoverable by find_packages()
+        # because they live under realai-core/ (hyphenated) via package_dir
+        # aliasing.  They must be listed explicitly.
+        'realai_core',
+        'realai_core.agents_impl',
+        'realai_core.engine',
+        'realai_core.providers',
+        'realai_core.tooling',
+    ],
+    package_dir={
+        'realai_core':               'realai-core/agent_tools',
+        'realai_core.agents_impl':   'realai-core/agent_tools/agents_impl',
+        'realai_core.engine':        'realai-core/agent_tools/engine',
+        'realai_core.providers':     'realai-core/agent_tools/providers',
+        'realai_core.tooling':       'realai-core/agent_tools/tooling',
+    },
     py_modules=["api_server", "local_models", "main"],
     include_package_data=True,
+    package_data={"realai": ["models/*.json"]},
     classifiers=[
         "Development Status :: 4 - Beta",
         "Intended Audience :: Developers",
@@ -30,7 +47,7 @@ setup(
         "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
     ],
-    python_requires=">=3.7",
+    python_requires=">=3.12,<4.0",
     entry_points={
         "console_scripts": [
             "realai=realai:main",
