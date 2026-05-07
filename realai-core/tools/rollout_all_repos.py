@@ -14,7 +14,7 @@ import sys as _sys
 _sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _shared import run  # noqa: E402
 
-from agent_tools.importer import import_agency_agents
+from realai_core.importer import import_agency_agents
 
 
 ROOT = Path(__file__).resolve().parents[1]
