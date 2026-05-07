@@ -14,6 +14,9 @@ setup(
     long_description_content_type="text/markdown",
     url="https://github.com/Unwrenchable/realai",
     packages=find_packages() + [
+        # realai_core packages are not auto-discoverable by find_packages()
+        # because they live under realai-core/ (hyphenated) via package_dir
+        # aliasing.  They must be listed explicitly.
         'realai_core',
         'realai_core.engine',
         'realai_core.providers',
