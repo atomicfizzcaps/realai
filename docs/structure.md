@@ -8,6 +8,7 @@ realai/
         chat.py
         embeddings.py
         models.py
+        tasks.py
   core/
     __init__.py
     api/
@@ -17,6 +18,7 @@ realai/
         chat.py
         embeddings.py
         models.py
+        tasks.py
       errors.py
     config/
       __init__.py
@@ -29,10 +31,19 @@ realai/
     inference/
       __init__.py
       backend.py
+      chat_pipeline.py
       registry.py
       local_stub.py
       vllm_backend.py
       llamacpp_backend.py
+    agents/
+      __init__.py
+      base.py
+      planner.py
+      worker.py
+      critic.py
+      synthesizer.py
+      executor.py
   docs/
     REALAI_3.0.md
     roadmap.md
@@ -47,4 +58,3 @@ realai/
   realai.toml
   models.yaml
   providers.yaml
-
