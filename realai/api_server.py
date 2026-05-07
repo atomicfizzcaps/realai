@@ -21,6 +21,7 @@ import sqlite3
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse, parse_qs
 from . import RealAI, PROVIDER_CONFIGS, PROVIDER_ENV_VARS, _KEY_PREFIX_TO_PROVIDER
+from .model_registry import MODEL_REGISTRY, get_model_metadata
 
 # ---------------------------------------------------------------------------
 # Database helpers
@@ -700,45 +701,18 @@ class RealAIAPIHandler(BaseHTTPRequestHandler):
             self._send_response(200, providers)
 
         elif parsed_path.path == '/v1/models':
-            # List available models: RealAI's own plus any configured providers.
-            models = [
-                {
-                    "id": "realai-2.0",
-                    "object": "model",
-                    "created": 1708308000,
-                    "owned_by": "realai",
-                    "permission": [],
-                    "root": "realai-2.0",
-                    "parent": None,
-                }
-            ]
-            for provider_name, cfg in PROVIDER_CONFIGS.items():
-                models.append({
-                    "id": cfg["default_model"],
-                    "object": "model",
-                    "created": 1708308000,
-                    "owned_by": provider_name,
-                    "permission": [],
-                    "root": cfg["default_model"],
-                    "parent": None,
-                })
-            self._send_response(200, {"object": "list", "data": models})
+            self._send_response(200, MODEL_REGISTRY.to_openai_list())
 
         elif parsed_path.path.startswith('/v1/models/'):
             model_id = parsed_path.path[len('/v1/models/'):]
-            model = self._get_model(model_name=model_id)
-            response = model.get_model_info()
-            response["object"] = "model"
-            response["id"] = model_id
-            self._send_response(200, response)
+            response = get_model_metadata(model_id)
+            if response is None:
+                self._send_response(404, {"error": f"Unknown model '{model_id}'"})
+            else:
+                self._send_response(200, response)
 
         elif parsed_path.path == '/v1/capabilities':
-            try:
-                from realai.model_registry import CAPABILITY_GRAPH
-                self._send_response(200, CAPABILITY_GRAPH.to_dict())
-            except Exception:
-                model = self._get_model()
-                self._send_response(200, model.get_capability_catalog())
+            self._send_response(200, MODEL_REGISTRY.to_capabilities_payload())
 
         elif parsed_path.path == '/v1/providers/capabilities':
             model = self._get_model()

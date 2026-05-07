@@ -1521,25 +1521,68 @@ def test_capability_graph():
     print("Testing capability graph...")
     from realai.model_registry import CAPABILITY_GRAPH, CapabilityGraph, MODEL_REGISTRY
 
-    # Test that capability graph has expected capabilities
     caps = CAPABILITY_GRAPH.all_capabilities()
     assert len(caps) > 0, "Capability graph should have capabilities"
     assert "coding" in caps or "reasoning" in caps, "Should have standard capabilities"
+    assert "planning" in caps, "Declared metadata capabilities should be preserved"
 
-    # Test get returns sorted list
     entries = CAPABILITY_GRAPH.get("reasoning")
     assert isinstance(entries, list), "get() should return a list"
 
-    # Test to_dict
     d = CAPABILITY_GRAPH.to_dict()
     assert isinstance(d, dict), "to_dict() should return dict"
+    if d.get("reasoning"):
+        assert "model_id" in d["reasoning"][0]
+        assert "score" in d["reasoning"][0]
 
-    # Test building from model list
     models = MODEL_REGISTRY.list_all()
-    graph = CapabilityGraph(models)
+    graph = CapabilityGraph(models, declared_capabilities=MODEL_REGISTRY.list_capabilities())
     assert len(graph.all_capabilities()) > 0, "Graph from models should have capabilities"
 
     print("✓ Capability graph test passed")
+
+
+def test_model_registry_metadata():
+    """Test metadata-backed model registry helpers."""
+    print("Testing metadata-backed model registry...")
+    from realai.model_registry import MODEL_REGISTRY, get_model_metadata
+
+    default_model = MODEL_REGISTRY.get_default_model()
+    assert default_model is not None, "Registry should expose a default model"
+    assert default_model.id == "realai-2.0"
+
+    metadata = get_model_metadata("realai-2.0")
+    assert metadata is not None
+    assert metadata["display_name"] == "RealAI 2.0 General"
+    assert metadata["compatibility_matrix"]["tool_calls"] is True
+    assert "best_for" in metadata["performance_profile"]
+
+    planning_models = MODEL_REGISTRY.models_with_capability("planning")
+    assert len(planning_models) > 0
+
+    best_local = MODEL_REGISTRY.best_model_for("planning", {"prefer_local": True})
+    assert best_local is not None
+    assert best_local.local_available is True
+
+    print("✓ Metadata-backed model registry test passed")
+
+
+def test_model_registry_api_payloads():
+    """Test registry-backed API payload helpers."""
+    print("Testing model registry API payloads...")
+    from realai.model_registry import MODEL_REGISTRY
+
+    models_payload = MODEL_REGISTRY.to_openai_list()
+    assert models_payload["object"] == "list"
+    assert any(item["id"] == "realai-2.0" for item in models_payload["data"])
+
+    capabilities_payload = MODEL_REGISTRY.to_capabilities_payload()
+    assert capabilities_payload["default_model"] == "realai-2.0"
+    assert "capability_graph" in capabilities_payload
+    assert "routing_policies" in capabilities_payload
+    assert any(item["id"] == "realai-1.0-agentic" for item in capabilities_payload["models"])
+
+    print("✓ Model registry API payloads test passed")
 
 
 def test_route_for_task():
@@ -3069,6 +3112,8 @@ def run_all_tests():
         test_portfolio_management,
         # Feature 1: Model Registry + Capability Graph
         test_capability_graph,
+        test_model_registry_metadata,
+        test_model_registry_api_payloads,
         test_route_for_task,
         # Feature 2: Tool Registry
         test_tool_registry,
