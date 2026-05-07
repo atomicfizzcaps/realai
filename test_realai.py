@@ -181,7 +181,101 @@ def test_structured_server_routes():
     status, response, content_type = dispatch_request('GET', '/metrics')
     assert status == 200
     assert 'realai_requests_total' in response
+
+    status, response, _content_type = dispatch_request('GET', '/v1/models')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert any(model['id'] == 'realai-1.0' for model in response['data'])
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/images/generations',
+        {'prompt': 'A test scene', 'n': 1}
+    )
+    assert status == 200
+    assert len(response['data']) == 1
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/audio/transcriptions',
+        {'file': 'audio.mp3'}
+    )
+    assert status == 200
+    assert 'text' in response
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/audio/speech',
+        {'input': 'Hello world'}
+    )
+    assert status == 200
+    assert 'audio_url' in response
     print("✓ Structured server routes test passed")
+
+
+def test_structured_server_platform_endpoints():
+    """Test memory/tools/tasks provider platform endpoints."""
+    print("Testing structured server platform endpoints...")
+    from realai.server.router import dispatch_request
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tools')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert any(tool['name'] == 'web_search' for tool in response['data'])
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/memory/store',
+        {'user_id': 'u1', 'agent_id': 'a1', 'content': 'Solana tx failed at simulation step'}
+    )
+    assert status == 200
+    assert response['status'] == 'stored'
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/memory/inspect',
+        {'user_id': 'u1', 'agent_id': 'a1'}
+    )
+    assert status == 200
+    assert response['object'] == 'list'
+    assert len(response['data']) == 1
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/tasks',
+        {'task': 'Draft a deployment checklist', 'context': 'render + postgres'}
+    )
+    assert status == 200
+    assert response['status'] == 'completed'
+    task_id = response['id']
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tasks/{0}'.format(task_id))
+    assert status == 200
+    assert response['id'] == task_id
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tasks')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert len(response['data']) >= 1
+    print("✓ Structured server platform endpoints test passed")
+
+
+def test_structured_server_config_files():
+    """Test typed config loading from realai.toml/models.yaml/providers.yaml."""
+    print("Testing structured server config loading...")
+    from realai.server.config import load_registry, load_settings
+
+    settings = load_settings()
+    assert settings.default_chat_model == 'realai-1.0'
+    assert settings.default_embedding_model == 'realai-embed'
+    assert settings.provider == 'local'
+    assert 'default' in settings.profiles
+    assert 'providers' in settings.providers
+
+    registry = load_registry()
+    assert 'realai-default-8b' in registry
+    assert registry['realai-embed']['embedding_dimensions'] == 384
+    print("✓ Structured server config loading test passed")
 
 
 def test_structured_training_pipeline():
@@ -3016,6 +3110,8 @@ def run_all_tests():
         test_code_generation,
         test_embeddings,
         test_structured_server_routes,
+        test_structured_server_platform_endpoints,
+        test_structured_server_config_files,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,
