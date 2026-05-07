@@ -292,6 +292,38 @@ def test_structured_server_config_files():
     print("✓ Structured server config loading test passed")
 
 
+def test_week2_inference_registry_routes():
+    """Test week-2 app routes wired through inference registry."""
+    print("Testing week-2 inference registry routes...")
+    from apps.api.routes.chat import chat_completions
+    from apps.api.routes.embeddings import embeddings
+    from apps.api.routes.models import list_models
+    from core.api.schemas.chat import ChatCompletionRequest
+    from core.api.schemas.embeddings import EmbeddingsRequest
+
+    models_payload = list_models()
+    assert 'data' in models_payload
+    assert len(models_payload['data']) >= 1
+
+    chat_req = ChatCompletionRequest(
+        model='realai-default',
+        messages=[{'role': 'user', 'content': 'hello from week2'}],
+        stream=False,
+    )
+    chat_resp = chat_completions(chat_req)
+    assert chat_resp['model'] == 'local-stub-chat'
+    assert chat_resp['choices'][0]['message']['role'] == 'assistant'
+
+    embed_req = EmbeddingsRequest(
+        model='realai-embed-default',
+        input=['hello', 'world'],
+    )
+    embed_resp = embeddings(embed_req)
+    assert embed_resp['model'] == 'local-stub-embed'
+    assert len(embed_resp['data']) == 2
+    print("✓ Week-2 inference registry routes test passed")
+
+
 def test_structured_training_pipeline():
     """Test training dataset extraction helpers."""
     print("Testing structured training pipeline...")
@@ -3126,6 +3158,7 @@ def run_all_tests():
         test_structured_server_routes,
         test_structured_server_platform_endpoints,
         test_structured_server_config_files,
+        test_week2_inference_registry_routes,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,
