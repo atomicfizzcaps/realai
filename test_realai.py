@@ -170,6 +170,18 @@ def test_structured_server_routes():
     assert content_type == 'application/json'
     assert 'choices' in response
 
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/chat/completions',
+        {
+            'model': 'realai-1.0',
+            'messages': [{'role': 'user', 'content': 'Hello structured server'}],
+            'tools': 'not-a-list',
+        }
+    )
+    assert status == 400
+    assert 'tools must be a list' in response['error']['message']
+
     status, response, content_type = dispatch_request(
         'POST',
         '/v1/embeddings',
@@ -273,6 +285,8 @@ def test_structured_server_config_files():
     assert 'providers' in settings.providers
 
     registry = load_registry()
+    assert 'realai-1.0' in registry
+    assert 'realai-overseer' in registry
     assert 'realai-default-8b' in registry
     assert registry['realai-embed']['embedding_dimensions'] == 384
     print("✓ Structured server config loading test passed")

@@ -11,7 +11,7 @@ class ToolManifest:
     description: str
     params: Dict[str, str] = field(default_factory=dict)
     permissions: List[str] = field(default_factory=list)
-    timeout: int = 8000
+    timeout_ms: int = 8000
     safety_class: str = 'standard'
 
     def to_dict(self):
@@ -20,7 +20,7 @@ class ToolManifest:
             'description': self.description,
             'params': self.params,
             'permissions': self.permissions,
-            'timeout': self.timeout,
+            'timeout_ms': self.timeout_ms,
             'safety_class': self.safety_class,
         }
 
@@ -39,7 +39,7 @@ class ToolRuntime(object):
             description='Search the web',
             params={'query': 'string'},
             permissions=['network'],
-            timeout=8000,
+            timeout_ms=8000,
             safety_class='networked',
         ))
         self.register(ToolManifest(
@@ -47,7 +47,7 @@ class ToolRuntime(object):
             description='Read local files',
             params={'path': 'string'},
             permissions=['filesystem.read'],
-            timeout=5000,
+            timeout_ms=5000,
             safety_class='restricted',
         ))
         self.register(ToolManifest(
@@ -55,7 +55,7 @@ class ToolRuntime(object):
             description='Call Solana RPC methods',
             params={'method': 'string', 'params': 'object'},
             permissions=['web3.solana'],
-            timeout=10000,
+            timeout_ms=10000,
             safety_class='privileged',
         ))
 
@@ -94,4 +94,3 @@ class ToolRuntime(object):
 
 
 TOOLS = ToolRuntime()
-

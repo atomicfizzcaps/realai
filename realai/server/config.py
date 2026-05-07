@@ -54,9 +54,105 @@ def _load_yaml_file(path: Path) -> Dict[str, Any]:
             data = yaml.safe_load(handle) or {}
         return data if isinstance(data, dict) else {}
     try:
-        return json.loads(path.read_text(encoding='utf-8'))
+        return _parse_simple_yaml(path.read_text(encoding='utf-8'))
     except Exception as exc:
-        raise ValueError('PyYAML is required to parse {0}: {1}'.format(path, exc))
+        raise ValueError(
+            'Failed to parse YAML file {0} without PyYAML; install PyYAML for full YAML support. Error: {1}'.format(
+                path, exc
+            )
+        )
+
+
+def _coerce_yaml_value(raw: str):
+    text = raw.strip()
+    if text in ('true', 'True'):
+        return True
+    if text in ('false', 'False'):
+        return False
+    if text in ('null', 'None', '~'):
+        return None
+    if text.startswith('"') and text.endswith('"'):
+        return text[1:-1]
+    if text.startswith("'") and text.endswith("'"):
+        return text[1:-1]
+    try:
+        if '.' in text:
+            return float(text)
+        return int(text)
+    except Exception:
+        return text
+
+
+def _parse_simple_yaml(content: str) -> Dict[str, Any]:
+    """Parse a limited YAML subset used by RealAI config files.
+
+    Supported subset:
+    - nested mappings by indentation
+    - scalar values (str/bool/int/float/null)
+    - simple lists using `- value`
+    This parser is intentionally minimal and only intended for project config files.
+    """
+    root: Dict[str, Any] = {}
+    stack = [(-1, root)]
+
+    lines = content.splitlines()
+    for current_index, raw_line in enumerate(lines):
+        if not raw_line.strip() or raw_line.lstrip().startswith('#'):
+            continue
+        indent = len(raw_line) - len(raw_line.lstrip(' '))
+        line = raw_line.strip()
+
+        while stack and indent <= stack[-1][0]:
+            stack.pop()
+        if not stack:
+            raise ValueError('Invalid indentation in YAML.')
+        parent = stack[-1][1]
+
+        if line.startswith('- '):
+            item = _coerce_yaml_value(line[2:])
+            if not isinstance(parent, list):
+                raise ValueError('List item found without list parent.')
+            parent.append(item)
+            continue
+
+        if ':' not in line:
+            raise ValueError('Invalid YAML line: {0}'.format(line))
+        key, value = _split_yaml_key_value(line)
+        key = key.strip()
+        value = value.strip()
+        if value == '':
+            next_non_empty = None
+            for nxt in lines[current_index + 1:]:
+                if not nxt.strip() or nxt.lstrip().startswith('#'):
+                    continue
+                next_non_empty = nxt.strip()
+                break
+            node = [] if next_non_empty and next_non_empty.startswith('- ') else {}
+            if isinstance(parent, dict):
+                parent[key] = node
+            else:
+                raise ValueError('Mapping key found under list without object item.')
+            stack.append((indent, node))
+        else:
+            if isinstance(parent, dict):
+                parent[key] = _coerce_yaml_value(value)
+            else:
+                raise ValueError('Scalar mapping under unsupported parent.')
+
+    return root
+
+
+def _split_yaml_key_value(line: str):
+    in_single = False
+    in_double = False
+    for index, char in enumerate(line):
+        if char == "'" and not in_double:
+            in_single = not in_single
+        elif char == '"' and not in_single:
+            in_double = not in_double
+        elif char == ':' and not in_single and not in_double:
+            return line[:index], line[index + 1:]
+    raise ValueError('Missing key/value separator.')
 
 
 def _profiles_dir() -> Path:
@@ -122,7 +218,10 @@ def load_registry() -> Dict[str, Dict[str, Any]]:
     settings = load_settings()
     registry_path = _resolve_registry_path(settings.model_registry_path)
     if registry_path.exists():
-        data = json.loads(registry_path.read_text(encoding='utf-8'))
+        if registry_path.suffix.lower() in ('.yaml', '.yml'):
+            data = _load_yaml_file(registry_path)
+        else:
+            data = json.loads(registry_path.read_text(encoding='utf-8'))
     else:
         data = _load_yaml_file(_ROOT / 'models.yaml')
         if not data:

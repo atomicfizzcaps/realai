@@ -27,6 +27,8 @@ class MemoryRecord:
 class MemoryStore(object):
     """Per-user/per-agent memory store with simple retrieval."""
 
+    SUMMARY_WORD_LIMIT = 24
+
     def __init__(self):
         self._store = defaultdict(list)
 
@@ -34,7 +36,7 @@ class MemoryStore(object):
         return '{0}:{1}'.format(user_id or 'anonymous', agent_id or 'default')
 
     def add(self, user_id: str, agent_id: str, content: str, metadata=None):
-        summary = ' '.join((content or '').split()[:24])
+        summary = ' '.join((content or '').split()[:self.SUMMARY_WORD_LIMIT])
         record = MemoryRecord(content=content or '', summary=summary, metadata=metadata or {})
         key = self._key(user_id, agent_id)
         self._store[key].append(record)
@@ -86,4 +88,3 @@ class MemoryStore(object):
 
 
 MEMORY = MemoryStore()
-
