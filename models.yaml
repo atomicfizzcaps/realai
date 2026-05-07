@@ -1,3 +1,18 @@
+realai-default:
+  type: chat
+  backend: stub
+  path: local-stub-chat
+  capabilities:
+    - chat
+
+realai-embed-default:
+  type: embeddings
+  backend: stub
+  path: local-stub-embed
+  embedding_dimensions: 10
+  capabilities:
+    - embeddings
+
 realai-1.0:
   type: chat
   backend: vllm
@@ -37,4 +52,3 @@ realai-embed:
   capabilities:
     - embeddings
     - retrieval
-

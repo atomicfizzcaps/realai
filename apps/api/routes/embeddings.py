@@ -2,13 +2,13 @@
 
 from fastapi import APIRouter
 
+from apps.api.main import inference_registry
 from core.api.schemas.embeddings import EmbeddingsRequest, EmbeddingsResponse
-from core.models.stub import stub_embeddings
 
 router = APIRouter()
 
 
 @router.post("/v1/embeddings", response_model=EmbeddingsResponse)
 def embeddings(req: EmbeddingsRequest):
-    return stub_embeddings(req.input)
-
+    backend = inference_registry.get_embed(req.model)
+    return backend.embed(req.input)
