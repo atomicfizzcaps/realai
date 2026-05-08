@@ -33,11 +33,11 @@ class PythonSandbox:
 
     def _sandbox_prelude(self) -> str:
         allowed = repr(sorted(self.allowed_imports))
-        return """
+        prelude = """
 import builtins
 import socket
 
-_ALLOWED_IMPORTS = set({allowed})
+_ALLOWED_IMPORTS = set(__ALLOWED_IMPORTS__)
 _ORIG_IMPORT = builtins.__import__
 
 def _blocked(*args, **kwargs):
@@ -46,14 +46,15 @@ def _blocked(*args, **kwargs):
 def _safe_import(name, globals=None, locals=None, fromlist=(), level=0):
     root = str(name).split(".")[0]
     if root not in _ALLOWED_IMPORTS:
-        raise PermissionError("Import not allowed in sandbox: {{0}}".format(root))
+        raise PermissionError("Import not allowed in sandbox: {0}".format(root))
     return _ORIG_IMPORT(name, globals, locals, fromlist, level)
 
 builtins.open = _blocked
 builtins.__import__ = _safe_import
 socket.socket = _blocked
 socket.create_connection = _blocked
-""".format(allowed=allowed)
+"""
+        return prelude.replace("__ALLOWED_IMPORTS__", allowed)
 
     def run(self, code: str) -> Dict[str, Any]:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -79,4 +80,3 @@ socket.create_connection = _blocked
                 }
             except subprocess.TimeoutExpired:
                 return {"error": "Execution timed out", "sandboxed": True}
-
