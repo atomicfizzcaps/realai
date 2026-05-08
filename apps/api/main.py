@@ -8,7 +8,9 @@ from collections import defaultdict, deque
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from apps.api.middleware.logging import RequestLogger
 from core.inference.local_stub import LocalStubChat, LocalStubEmbeddings
+from core.logging.logger import log
 from core.inference.registry import InferenceRegistry
 from core.tools.code import CodeExecutionTool
 from core.tools.file import FileTool
@@ -24,6 +26,7 @@ from core.web3.registry import Web3Registry
 from core.web3.solana_backend import SolanaBackend
 
 app = FastAPI(title="RealAI API")
+app.add_middleware(RequestLogger)
 
 MAX_REQUESTS_PER_SECOND = 10
 MAX_REQUESTS_PER_MINUTE = 100
@@ -58,49 +61,54 @@ voice_registry.register_tts(PiperTTS())
 
 @app.middleware("http")
 async def security_middleware(request, call_next):
-    now = time.monotonic()
-    identifier = request.client.host if request.client and request.client.host else "unknown"
-    window = _RATE_WINDOWS[identifier]
-    while window and now - window[0] > 60:
-        window.popleft()
-    one_second_count = 0
-    for ts in reversed(window):
-        if now - ts <= 1:
-            one_second_count += 1
-        else:
-            break
-    if one_second_count >= MAX_REQUESTS_PER_SECOND or len(window) >= MAX_REQUESTS_PER_MINUTE:
-        return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"})
-    window.append(now)
+    try:
+        now = time.monotonic()
+        identifier = request.client.host if request.client and request.client.host else "unknown"
+        window = _RATE_WINDOWS[identifier]
+        while window and now - window[0] > 60:
+            window.popleft()
+        one_second_count = 0
+        for ts in reversed(window):
+            if now - ts <= 1:
+                one_second_count += 1
+            else:
+                break
+        if one_second_count >= MAX_REQUESTS_PER_SECOND or len(window) >= MAX_REQUESTS_PER_MINUTE:
+            return JSONResponse(status_code=429, content={"error": "Rate limit exceeded"})
+        window.append(now)
 
-    content_length = request.headers.get("content-length")
-    if content_length:
-        try:
-            if int(content_length) > MAX_PAYLOAD_BYTES:
-                return JSONResponse(status_code=413, content={"error": "Payload too large"})
-        except ValueError:
-            return JSONResponse(status_code=400, content={"error": "Invalid content-length header"})
+        content_length = request.headers.get("content-length")
+        if content_length:
+            try:
+                if int(content_length) > MAX_PAYLOAD_BYTES:
+                    return JSONResponse(status_code=413, content={"error": "Payload too large"})
+            except ValueError:
+                return JSONResponse(status_code=400, content={"error": "Invalid content-length header"})
 
-    if request.method in {"POST", "PUT", "PATCH"}:
-        content_type = request.headers.get("content-type", "")
-        if "application/json" in content_type:
-            body = await request.body()
-            if len(body) > MAX_PAYLOAD_BYTES:
-                return JSONResponse(status_code=413, content={"error": "Payload too large"})
-            if body:
-                try:
-                    json.loads(body.decode("utf-8"))
-                except Exception:
-                    return JSONResponse(status_code=400, content={"error": "Malformed JSON"})
-            request._body = body
-    return await call_next(request)
+        if request.method in {"POST", "PUT", "PATCH"}:
+            content_type = request.headers.get("content-type", "")
+            if "application/json" in content_type:
+                body = await request.body()
+                if len(body) > MAX_PAYLOAD_BYTES:
+                    return JSONResponse(status_code=413, content={"error": "Payload too large"})
+                if body:
+                    try:
+                        json.loads(body.decode("utf-8"))
+                    except Exception:
+                        return JSONResponse(status_code=400, content={"error": "Malformed JSON"})
+                request._body = body
+        return await call_next(request)
+    except Exception as exc:
+        log("error.exception", {"path": request.url.path, "error": str(exc)})
+        raise
 
 
-from apps.api.routes import audio, chat, embeddings, models, tasks, voice_ws, web3  # noqa: E402
+from apps.api.routes import audio, chat, embeddings, metrics, models, tasks, voice_ws, web3  # noqa: E402
 
 app.include_router(chat.router)
 app.include_router(embeddings.router)
 app.include_router(models.router)
+app.include_router(metrics.router)
 app.include_router(tasks.router)
 app.include_router(audio.router)
 app.include_router(voice_ws.router)

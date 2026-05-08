@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List
 
+from core.logging.logger import log
 from core.memory.base import MemoryStore
 
 
@@ -44,6 +45,7 @@ class SQLiteMemoryStore(MemoryStore):
     def add(self, user_id: str, items: List[Dict[str, Any]]) -> None:
         if not items:
             return
+        log("memory.write", {"user_id": user_id, "items": len(items)})
         with self._lock:
             for item in items:
                 content = str(item.get("content", ""))
@@ -75,7 +77,9 @@ class SQLiteMemoryStore(MemoryStore):
                 "score": score,
             })
         ranked.sort(key=lambda item: item["score"], reverse=True)
-        return ranked[: max(0, int(k))]
+        results = ranked[: max(0, int(k))]
+        log("memory.read", {"user_id": user_id, "query": query, "results": len(results)})
+        return results
 
     def clear(self, user_id: str) -> None:
         with self._lock:
@@ -91,4 +95,3 @@ def _embedding_from_text(text: str) -> List[float]:
     while len(digest) < 10:
         digest.append(0.0)
     return digest[:10]
-
