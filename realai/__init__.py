@@ -78,6 +78,32 @@ try:
 except Exception:
     LOCAL_MODELS_AVAILABLE = False
 
+try:
+    try:
+        from .router import IntelligentRouter, INTELLIGENT_ROUTER, ProviderScore, CircuitBreaker, CircuitState
+    except ImportError:
+        from realai.router import IntelligentRouter, INTELLIGENT_ROUTER, ProviderScore, CircuitBreaker, CircuitState
+    ROUTER_AVAILABLE = True
+except Exception:
+    ROUTER_AVAILABLE = False
+
+try:
+    try:
+        from .audit import (
+            AuditLogger, AuditEvent, DataEncryption,
+            ConsentManager, RateLimiter, ObservabilityDashboard,
+            AUDIT_LOGGER, CONSENT_MANAGER, RATE_LIMITER, OBSERVABILITY,
+        )
+    except ImportError:
+        from realai.audit import (
+            AuditLogger, AuditEvent, DataEncryption,
+            ConsentManager, RateLimiter, ObservabilityDashboard,
+            AUDIT_LOGGER, CONSENT_MANAGER, RATE_LIMITER, OBSERVABILITY,
+        )
+    AUDIT_AVAILABLE = True
+except Exception:
+    AUDIT_AVAILABLE = False
+
 
 # ---------------------------------------------------------------------------
 # Agent Registry and Orchestration System (Hive Mind)
