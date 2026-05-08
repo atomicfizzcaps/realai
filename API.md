@@ -374,6 +374,25 @@ python api_server.py
 
 The server will start on `http://0.0.0.0:8000` by default.
 
+### Provider-Grade v1 Contract (Frozen Surface)
+
+The structured provider surface in `realai/server/*` now treats the following endpoints as canonical:
+
+- `POST /v1/chat/completions`
+- `POST /v1/embeddings`
+- `POST /v1/audio/transcriptions`
+- `POST /v1/audio/speech`
+- `POST /v1/images/generations`
+- `GET /v1/models` and `GET /v1/models/{id}`
+
+Additional provider endpoints for platform execution:
+
+- `GET /v1/tools`
+- `POST /v1/tasks`, `GET /v1/tasks`, `GET /v1/tasks/{id}`
+- `POST /v1/memory/store`, `POST /v1/memory/inspect`, `POST /v1/memory/clear`
+
+Legacy non-`/v1` path variants remain as compatibility shims when enabled by config.
+
 ### Available Endpoints
 
 #### GET /health

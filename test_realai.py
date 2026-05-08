@@ -170,6 +170,18 @@ def test_structured_server_routes():
     assert content_type == 'application/json'
     assert 'choices' in response
 
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/chat/completions',
+        {
+            'model': 'realai-1.0',
+            'messages': [{'role': 'user', 'content': 'Hello structured server'}],
+            'tools': 'not-a-list',
+        }
+    )
+    assert status == 400
+    assert 'tools must be a list' in response['error']['message']
+
     status, response, content_type = dispatch_request(
         'POST',
         '/v1/embeddings',
@@ -181,7 +193,352 @@ def test_structured_server_routes():
     status, response, content_type = dispatch_request('GET', '/metrics')
     assert status == 200
     assert 'realai_requests_total' in response
+
+    status, response, _content_type = dispatch_request('GET', '/v1/models')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert any(model['id'] == 'realai-1.0' for model in response['data'])
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/images/generations',
+        {'prompt': 'A test scene', 'n': 1}
+    )
+    assert status == 200
+    assert len(response['data']) == 1
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/audio/transcriptions',
+        {'file': 'audio.mp3'}
+    )
+    assert status == 200
+    assert 'text' in response
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/audio/speech',
+        {'input': 'Hello world'}
+    )
+    assert status == 200
+    assert 'audio_url' in response
     print("✓ Structured server routes test passed")
+
+
+def test_structured_server_platform_endpoints():
+    """Test memory/tools/tasks provider platform endpoints."""
+    print("Testing structured server platform endpoints...")
+    from realai.server.router import dispatch_request
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tools')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert any(tool['name'] == 'web_search' for tool in response['data'])
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/memory/store',
+        {'user_id': 'u1', 'agent_id': 'a1', 'content': 'Solana tx failed at simulation step'}
+    )
+    assert status == 200
+    assert response['status'] == 'stored'
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/memory/inspect',
+        {'user_id': 'u1', 'agent_id': 'a1'}
+    )
+    assert status == 200
+    assert response['object'] == 'list'
+    assert len(response['data']) == 1
+
+    status, response, _content_type = dispatch_request(
+        'POST',
+        '/v1/tasks',
+        {'task': 'Draft a deployment checklist', 'context': 'render + postgres'}
+    )
+    assert status == 200
+    assert response['status'] == 'completed'
+    task_id = response['id']
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tasks/{0}'.format(task_id))
+    assert status == 200
+    assert response['id'] == task_id
+
+    status, response, _content_type = dispatch_request('GET', '/v1/tasks')
+    assert status == 200
+    assert response['object'] == 'list'
+    assert len(response['data']) >= 1
+    print("✓ Structured server platform endpoints test passed")
+
+
+def test_structured_server_config_files():
+    """Test typed config loading from realai.toml/models.yaml/providers.yaml."""
+    print("Testing structured server config loading...")
+    from realai.server.config import load_registry, load_settings
+
+    settings = load_settings()
+    assert settings.default_chat_model == 'realai-1.0'
+    assert settings.default_embedding_model == 'realai-embed'
+    assert settings.provider == 'local'
+    assert 'default' in settings.profiles
+    assert 'providers' in settings.providers
+
+    registry = load_registry()
+    assert 'realai-1.0' in registry
+    assert 'realai-overseer' in registry
+    assert 'realai-default-8b' in registry
+    assert registry['realai-embed']['embedding_dimensions'] == 384
+    print("✓ Structured server config loading test passed")
+
+
+def test_week2_inference_registry_routes():
+    """Test week-2 app routes wired through inference registry."""
+    print("Testing week-2 inference registry routes...")
+    try:
+        from apps.api.routes.chat import chat_completions
+        from apps.api.routes.embeddings import embeddings
+        from apps.api.routes.models import list_models
+    except ImportError:
+        print("✓ Week-2 inference registry routes skipped (FastAPI unavailable)")
+        return
+    from core.api.schemas.chat import ChatCompletionRequest
+    from core.api.schemas.embeddings import EmbeddingsRequest
+
+    models_payload = list_models()
+    assert 'data' in models_payload
+    assert len(models_payload['data']) >= 1
+
+    chat_req = ChatCompletionRequest(
+        model='realai-default',
+        messages=[{'role': 'user', 'content': 'hello from week2'}],
+        stream=False,
+    )
+    chat_resp = chat_completions(chat_req)
+    assert chat_resp['model'] == 'local-stub-chat'
+    assert chat_resp['choices'][0]['message']['role'] == 'assistant'
+
+    embed_req = EmbeddingsRequest(
+        model='realai-embed-default',
+        input=['hello', 'world'],
+    )
+    embed_resp = embeddings(embed_req)
+    assert embed_resp['model'] == 'local-stub-embed'
+    assert len(embed_resp['data']) == 2
+    print("✓ Week-2 inference registry routes test passed")
+
+
+def test_week3_memory_and_tool_pipeline():
+    """Test chat pipeline memory retrieval + tool execution loop."""
+    print("Testing week-3 memory and tool pipeline...")
+    try:
+        from apps.api.routes.chat import chat_completions
+    except ImportError:
+        print("✓ Week-3 memory and tool pipeline skipped (FastAPI unavailable)")
+        return
+    from core.api.schemas.chat import ChatCompletionRequest
+    from core.memory.sqlite_store import SQLiteMemoryStore
+
+    user_id = "week3-user"
+    memory = SQLiteMemoryStore("realai_memory.sqlite3")
+    memory.clear(user_id)
+
+    tool_req = ChatCompletionRequest(
+        model="realai-default",
+        user_id=user_id,
+        messages=[{"role": "user", "content": "Search the web for solana staking yield"}],
+    )
+    tool_resp = chat_completions(tool_req)
+    assert "choices" in tool_resp
+    assert "tool result" in tool_resp["choices"][0]["message"]["content"].lower()
+
+    remember_req = ChatCompletionRequest(
+        model="realai-default",
+        user_id=user_id,
+        messages=[{"role": "user", "content": "Remember my dog's name is Pixel"}],
+    )
+    chat_completions(remember_req)
+
+    found = memory.search(user_id, "Pixel", k=3)
+    assert len(found) >= 1
+    assert any("pixel" in item["content"].lower() for item in found)
+    print("✓ Week-3 memory and tool pipeline test passed")
+
+
+def test_week5_voice_registry_backends():
+    """Test week-5 voice registry and fallback backends."""
+    print("Testing week-5 voice registry/backends...")
+    from core.voice.asr_whisper import WhisperASR
+    from core.voice.registry import VoiceRegistry
+    from core.voice.tts_piper import PiperTTS
+
+    registry = VoiceRegistry()
+    asr = WhisperASR()
+    tts = PiperTTS()
+    registry.register_asr(asr)
+    registry.register_tts(tts)
+
+    transcribed = registry.get_asr("whisper-asr").transcribe(b"fake-audio")
+    assert "text" in transcribed
+
+    audio_bytes = registry.get_tts("piper-tts").synthesize("hello")
+    assert isinstance(audio_bytes, (bytes, bytearray))
+    assert len(audio_bytes) > 0
+    print("✓ Week-5 voice registry/backends test passed")
+
+
+def test_week7_python_sandbox_security():
+    """Test Week-7 sandbox timeout and filesystem lock-down."""
+    print("Testing week-7 python sandbox security...")
+    from core.security.python_sandbox import PythonSandbox
+
+    sandbox = PythonSandbox(timeout_seconds=1)
+    blocked = sandbox.run("open('blocked.txt', 'w').write('x')")
+    assert "PermissionError" in blocked.get("stderr", "") or blocked.get("returncode", 0) != 0
+
+    timeout = sandbox.run("while True:\n    pass")
+    assert "error" in timeout or timeout.get("returncode", 0) != 0
+    print("✓ Week-7 python sandbox security test passed")
+
+
+def test_week7_tool_permission_enforcement():
+    """Test tool permission enforcement in ToolRegistry."""
+    print("Testing week-7 tool permission enforcement...")
+    from core.tools.registry import ToolRegistry
+    from core.tools.web import WebSearchTool
+
+    registry = ToolRegistry()
+    registry.register(WebSearchTool())
+
+    denied = False
+    try:
+        registry.execute_tool("web_search", {"query": ""}, context={"allowed_permissions": []})
+    except PermissionError:
+        denied = True
+    assert denied
+
+    allowed = registry.execute_tool(
+        "web_search",
+        {"query": ""},
+        context={"allowed_permissions": ["network"]},
+    )
+    assert "results" in allowed
+    print("✓ Week-7 tool permission enforcement test passed")
+
+
+def test_week7_agent_safety_limits():
+    """Test agent max-step safety enforcement."""
+    print("Testing week-7 agent safety limits...")
+    from core.agents.executor import TaskExecutor
+
+    class _Planner:
+        def step(self, _messages, _context):
+            return {"plan": ["step-{0}".format(i) for i in range(11)]}
+
+    class _Worker:
+        def step(self, _messages, _context):
+            return {"ok": True}
+
+    class _Critic:
+        def step(self, _messages, _context):
+            return {"ok": True}
+
+    class _Synth:
+        def step(self, _messages, _context):
+            return {"final": "done"}
+
+    executor = TaskExecutor(_Planner(), _Worker(), _Critic(), _Synth())
+    hit_limit = False
+    try:
+        executor.run([], {"model": "realai-default"})
+    except RuntimeError:
+        hit_limit = True
+    assert hit_limit
+    print("✓ Week-7 agent safety limits test passed")
+
+
+def test_week7_web3_policy():
+    """Test web3 approval flow and spend limit enforcement."""
+    print("Testing week-7 web3 policy...")
+    from core.web3.policy import Web3Policy
+
+    policy = Web3Policy(max_spend=0.1)
+    approval = policy.require_approval({"value": 0.01})
+    assert approval["requires_approval"] is True
+
+    denied = False
+    try:
+        policy.validate_tx({"value": 0.2, "approved": True})
+    except ValueError:
+        denied = True
+    assert denied
+
+    denied = False
+    try:
+        policy.validate_tx({"value": 0.01})
+    except PermissionError:
+        denied = True
+    assert denied
+    print("✓ Week-7 web3 policy test passed")
+
+
+def test_week7_tool_call_validation():
+    """Test tool call validation for unknown tools."""
+    print("Testing week-7 tool call validation...")
+    from core.agents.safety import AgentSafety
+
+    safety = AgentSafety()
+    denied = False
+    try:
+        safety.validate_tool_call({"name": "unknown_tool"}, ["web_search"])
+    except PermissionError:
+        denied = True
+    assert denied
+    print("✓ Week-7 tool call validation test passed")
+
+
+def test_week9_model_cache():
+    """Test model cache lazy loading and hot reload clear behavior."""
+    print("Testing week-9 model cache...")
+    from core.models.cache import ModelCache
+
+    cache = ModelCache()
+    counter = {"n": 0}
+
+    def _loader():
+        counter["n"] += 1
+        return {"id": "demo"}
+
+    first = cache.get("demo", _loader)
+    second = cache.get("demo", _loader)
+    assert first["id"] == "demo"
+    assert second["id"] == "demo"
+    assert counter["n"] == 1
+    cache.clear()
+    cache.get("demo", _loader)
+    assert counter["n"] == 2
+    print("✓ Week-9 model cache test passed")
+
+
+def test_week9_health_and_reload_routes():
+    """Test health/readiness and model reload routes."""
+    print("Testing week-9 health/reload routes...")
+    try:
+        from apps.api.routes.health import health, ready
+        from apps.api.routes.models import reload_models
+    except ImportError:
+        print("✓ Week-9 health/reload routes skipped (FastAPI unavailable)")
+        return
+
+    health_payload = health()
+    assert health_payload.get("status") == "ok"
+
+    reload_payload = reload_models()
+    assert reload_payload.get("status") == "reloaded"
+
+    ready_payload = ready()
+    assert "models_loaded" in ready_payload
+    print("✓ Week-9 health/reload routes test passed")
 
 
 def test_structured_training_pipeline():
@@ -3016,6 +3373,18 @@ def run_all_tests():
         test_code_generation,
         test_embeddings,
         test_structured_server_routes,
+        test_structured_server_platform_endpoints,
+        test_structured_server_config_files,
+        test_week2_inference_registry_routes,
+        test_week3_memory_and_tool_pipeline,
+        test_week5_voice_registry_backends,
+        test_week7_python_sandbox_security,
+        test_week7_tool_permission_enforcement,
+        test_week7_agent_safety_limits,
+        test_week7_web3_policy,
+        test_week7_tool_call_validation,
+        test_week9_model_cache,
+        test_week9_health_and_reload_routes,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,
