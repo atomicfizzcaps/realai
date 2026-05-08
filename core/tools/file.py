@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Dict
 
 from core.tools.base import Tool
+from core.tools.permissions import Permissions
 
 
 class FileTool(Tool):
@@ -14,7 +15,7 @@ class FileTool(Tool):
         "path": {"type": "string"},
         "content": {"type": "string"},
     }
-    permissions = ["filesystem.read", "filesystem.write"]
+    permissions = [Permissions.FILESYSTEM]
 
     def __init__(self, scope_dir: str = "."):
         self.scope_dir = Path(scope_dir).resolve()
@@ -38,4 +39,3 @@ class FileTool(Tool):
             target.write_text(str(kwargs.get("content", "")), encoding="utf-8")
             return {"status": "ok"}
         raise ValueError("Unsupported action")
-

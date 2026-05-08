@@ -387,6 +387,116 @@ def test_week5_voice_registry_backends():
     print("✓ Week-5 voice registry/backends test passed")
 
 
+def test_week7_python_sandbox_security():
+    """Test Week-7 sandbox timeout and filesystem lock-down."""
+    print("Testing week-7 python sandbox security...")
+    from core.security.python_sandbox import PythonSandbox
+
+    sandbox = PythonSandbox(timeout_seconds=1)
+    blocked = sandbox.run("open('blocked.txt', 'w').write('x')")
+    assert "PermissionError" in blocked.get("stderr", "") or blocked.get("returncode", 0) != 0
+
+    timeout = sandbox.run("while True:\n    pass")
+    assert "error" in timeout or timeout.get("returncode", 0) != 0
+    print("✓ Week-7 python sandbox security test passed")
+
+
+def test_week7_tool_permission_enforcement():
+    """Test tool permission enforcement in ToolRegistry."""
+    print("Testing week-7 tool permission enforcement...")
+    from core.tools.registry import ToolRegistry
+    from core.tools.web import WebSearchTool
+
+    registry = ToolRegistry()
+    registry.register(WebSearchTool())
+
+    denied = False
+    try:
+        registry.execute_tool("web_search", {"query": ""}, context={"allowed_permissions": []})
+    except PermissionError:
+        denied = True
+    assert denied
+
+    allowed = registry.execute_tool(
+        "web_search",
+        {"query": ""},
+        context={"allowed_permissions": ["network"]},
+    )
+    assert "results" in allowed
+    print("✓ Week-7 tool permission enforcement test passed")
+
+
+def test_week7_agent_safety_limits():
+    """Test agent max-step safety enforcement."""
+    print("Testing week-7 agent safety limits...")
+    from core.agents.executor import TaskExecutor
+
+    class _Planner:
+        def step(self, _messages, _context):
+            return {"plan": ["step-{0}".format(i) for i in range(11)]}
+
+    class _Worker:
+        def step(self, _messages, _context):
+            return {"ok": True}
+
+    class _Critic:
+        def step(self, _messages, _context):
+            return {"ok": True}
+
+    class _Synth:
+        def step(self, _messages, _context):
+            return {"final": "done"}
+
+    executor = TaskExecutor(_Planner(), _Worker(), _Critic(), _Synth())
+    hit_limit = False
+    try:
+        executor.run([], {"model": "realai-default"})
+    except RuntimeError:
+        hit_limit = True
+    assert hit_limit
+    print("✓ Week-7 agent safety limits test passed")
+
+
+def test_week7_web3_policy():
+    """Test web3 approval flow and spend limit enforcement."""
+    print("Testing week-7 web3 policy...")
+    from core.web3.policy import Web3Policy
+
+    policy = Web3Policy(max_spend=0.1)
+    approval = policy.require_approval({"value": 0.01})
+    assert approval["requires_approval"] is True
+
+    denied = False
+    try:
+        policy.validate_tx({"value": 0.2, "approved": True})
+    except ValueError:
+        denied = True
+    assert denied
+
+    denied = False
+    try:
+        policy.validate_tx({"value": 0.01})
+    except PermissionError:
+        denied = True
+    assert denied
+    print("✓ Week-7 web3 policy test passed")
+
+
+def test_week7_tool_call_validation():
+    """Test tool call validation for unknown tools."""
+    print("Testing week-7 tool call validation...")
+    from core.agents.safety import AgentSafety
+
+    safety = AgentSafety()
+    denied = False
+    try:
+        safety.validate_tool_call({"name": "unknown_tool"}, ["web_search"])
+    except PermissionError:
+        denied = True
+    assert denied
+    print("✓ Week-7 tool call validation test passed")
+
+
 def test_structured_training_pipeline():
     """Test training dataset extraction helpers."""
     print("Testing structured training pipeline...")
@@ -3224,6 +3334,11 @@ def run_all_tests():
         test_week2_inference_registry_routes,
         test_week3_memory_and_tool_pipeline,
         test_week5_voice_registry_backends,
+        test_week7_python_sandbox_security,
+        test_week7_tool_permission_enforcement,
+        test_week7_agent_safety_limits,
+        test_week7_web3_policy,
+        test_week7_tool_call_validation,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,

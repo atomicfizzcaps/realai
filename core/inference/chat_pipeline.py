@@ -8,6 +8,7 @@ from core.memory.sqlite_store import SQLiteMemoryStore
 from core.memory.summarizer import ConversationSummarizer
 from core.tools.code import CodeExecutionTool
 from core.tools.file import FileTool
+from core.tools.permissions import Permissions
 from core.tools.registry import ToolRegistry
 from core.tools.web import WebSearchTool
 
@@ -45,13 +46,12 @@ def _extract_tool_call(response: Dict[str, Any]):
     return message.get("tool_call")
 
 
-def _execute_tool_call(tool_call: Dict[str, Any]):
+def _execute_tool_call(tool_call: Dict[str, Any], context: Dict[str, Any]):
     name = tool_call.get("name")
     args = tool_call.get("arguments", {})
     if not isinstance(args, dict):
         args = {}
-    tool = _TOOLS.get(name)
-    result = tool(**args)
+    result = _TOOLS.execute_tool(name, args, context=context)
     return {"name": name, "result": result}
 
 
@@ -75,7 +75,16 @@ def run_chat_pipeline(
         if not tool_call:
             break
         tool_steps += 1
-        execution = _execute_tool_call(tool_call)
+        execution = _execute_tool_call(
+            tool_call,
+            context={
+                "allowed_permissions": [
+                    Permissions.NETWORK,
+                    Permissions.CODE_EXEC,
+                    Permissions.FILESYSTEM,
+                ]
+            },
+        )
         augmented_messages.append({"role": "assistant", "content": json.dumps({"tool_call": tool_call})})
         augmented_messages.append({"role": "tool", "content": json.dumps(execution["result"]), "name": execution["name"]})
         response = chat_backend.generate(augmented_messages)
@@ -100,4 +109,3 @@ def run_chat_pipeline(
         _MEMORY.add(user_id, [summary_item])
 
     return response
-
