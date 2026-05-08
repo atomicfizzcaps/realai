@@ -3535,6 +3535,10 @@ def run_all_tests():
         test_training_data_generator,
         test_performance_evaluator,
         test_version_manager,
+        test_secure_tool_executor,
+        test_tool_execution_record,
+        test_multi_agent_pipeline,
+        test_multi_agent_orchestration,
     ]
     
     passed = 0
@@ -3560,6 +3564,135 @@ def run_all_tests():
     else:
         print("\n✓ All tests passed successfully!")
         sys.exit(0)
+
+
+def test_secure_tool_executor():
+    """Test SecureToolExecutor validates, rate-limits, and records executions."""
+    from realai.tools import SecureToolExecutor, TOOL_REGISTRY, ToolSchema
+
+    # Register a test tool
+    test_schema = ToolSchema(
+        name="test_tool_exec",
+        description="A test tool for executor tests.",
+        parameters={"type": "object", "properties": {"x": {"type": "integer"}}},
+        required=["x"],
+        safety_level="safe",
+        rate_limit_rpm=5,
+    )
+    TOOL_REGISTRY.register(test_schema)
+
+    executor = SecureToolExecutor(TOOL_REGISTRY, timeout_secs=5, max_retries=1)
+
+    # Successful execution
+    result = executor.execute(
+        "test_tool_exec",
+        {"x": 42},
+        lambda x: {"computed": x * 2},
+    )
+    assert result.get("status") == "success", "Expected success"
+    assert result.get("computed") == 84
+
+    # Validation failure — missing required field
+    result2 = executor.execute("test_tool_exec", {}, lambda x: {"ok": True})
+    assert result2.get("status") == "error"
+    assert result2.get("error") is not None
+    assert "Missing required field" in result2.get("error", "")
+
+    # Audit log has at least 2 entries; second entry is the validation failure
+    log = executor.get_audit_log()
+    assert len(log) >= 2
+    failed_entry = next((r for r in log if r.status == "error"), None)
+    assert failed_entry is not None
+    assert "Validation failed" in (failed_entry.error or "")
+
+    # Rate limit status
+    status = executor.get_rate_limit_status("test_tool_exec")
+    assert "calls_this_minute" in status
+    assert "limit_rpm" in status
+    assert status["limit_rpm"] == 5
+
+    print("✓ Secure tool executor test passed")
+
+
+def test_tool_execution_record():
+    """Test ToolExecutionRecord dataclass stores fields correctly."""
+    import time
+    from realai.tools import ToolExecutionRecord
+
+    now = time.time()
+    record = ToolExecutionRecord(
+        tool_name="web_research",
+        input_summary='{"query": "test"}',
+        output_summary='{"results": [...]}',
+        started_at=now,
+        duration_ms=123.4,
+        status="success",
+        error=None,
+    )
+    assert record.tool_name == "web_research"
+    assert record.status == "success"
+    assert record.error is None
+    assert record.duration_ms == 123.4
+
+    # Test error case
+    err_record = ToolExecutionRecord(
+        tool_name="web_research",
+        input_summary="{}",
+        output_summary="",
+        started_at=now,
+        duration_ms=5.0,
+        status="error",
+        error="Connection refused",
+    )
+    assert err_record.status == "error"
+    assert err_record.error == "Connection refused"
+
+    print("✓ Tool execution record test passed")
+
+
+def test_multi_agent_pipeline():
+    """Test MultiAgentPipeline runs all 5 stages and returns valid output."""
+    from realai.agent_runtime import MultiAgentPipeline
+
+    # Stub mode (no model_instance)
+    pipeline = MultiAgentPipeline()
+    result = pipeline.run("Build a weather app")
+    assert result.get("status") == "success", "Expected status success"
+    assert result.get("task") == "Build a weather app"
+    stage_outputs = result.get("stage_outputs", {})
+    for stage in ["planner", "researcher", "critic", "executor", "synthesizer"]:
+        assert stage in stage_outputs, f"Missing stage: {stage}"
+        assert isinstance(stage_outputs[stage], str) and len(stage_outputs[stage]) > 0
+    assert result.get("final_synthesis") == stage_outputs["synthesizer"]
+    assert isinstance(result.get("duration_ms"), float)
+    assert "note" in result  # stub mode: note should indicate no real model is attached
+    assert "stub" in result["note"].lower(), "Expected note to mention stub mode"
+
+    # With context
+    result2 = pipeline.run("Analyze market data", context={"domain": "finance"})
+    assert result2.get("status") == "success"
+
+    print("✓ Multi-agent pipeline test passed")
+
+
+def test_multi_agent_orchestration():
+    """Test RealAI.multi_agent_orchestration() method."""
+    from realai import RealAI
+
+    model = RealAI()
+    result = model.multi_agent_orchestration("optimize database queries")
+    assert result.get("status") == "success", "Expected status success"
+    assert "stage_outputs" in result
+    assert "final_synthesis" in result
+    assert isinstance(result.get("duration_ms"), float)
+    assert result.get("task") == "optimize database queries"
+
+    # Ensure all 5 stages present
+    stages = result.get("stage_outputs", {})
+    for stage in ["planner", "researcher", "critic", "executor", "synthesizer"]:
+        assert stage in stages, f"Missing stage: {stage}"
+
+    print("✓ Multi-agent orchestration test passed")
 
 
 if __name__ == "__main__":

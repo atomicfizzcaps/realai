@@ -471,20 +471,20 @@ Future: Automated benchmarking pipeline that re-scores models on a regular caden
 
 The following components are identified as missing or not yet built. Each is categorized by priority level. This is the gap analysis—everything below needs to be built for RealAI to reach production readiness.
 
-| # | Component | Priority | Description |
-| --- | --- | --- | --- |
-| 1 | Authentication & API Key Management | CRITICAL | Secure vault or env-based key rotation system for all provider keys. Support for multiple key pools per provider to distribute rate limits. |
-| 2 | Rate Limiting & Quota Management | CRITICAL | Per-provider and per-user rate limit tracking to avoid 429 errors. Token-bucket or sliding-window algorithms. Budget caps per user/agent. |
-| 3 | Error Recovery & Retry Logic | HIGH | Standardized retry with exponential backoff and jitter. Circuit breakers per provider. Graceful degradation on total provider failure. |
-| 4 | Streaming Infrastructure | HIGH | SSE or WebSocket layer for real-time token streaming to clients. Adapter-level stream normalization. |
-| 5 | Agent Manifest System | HIGH | Declarative YAML/JSON files defining each agent's system prompt, personality, available tools, model preferences, memory scope, and behavioral constraints. |
-| 6 | User Session Management | HIGH | Session creation, unique session IDs, context persistence across conversation turns, session timeout and cleanup. |
-| 7 | Vector Store Integration | MEDIUM | Embeddings database for semantic memory and RAG-style retrieval over past interactions. |
-| 8 | Fine-Tuning Pipeline | MEDIUM | Infrastructure for fine-tuning open-weight models on custom datasets. Version management, evaluation hooks, deployment to inference. |
-| 9 | Evaluation & Benchmarking Suite | MEDIUM | Automated testing of model outputs against quality benchmarks. Feeds updated scores back to Capabilities Graph. |
-| 10 | Admin Dashboard | MEDIUM | Web UI for monitoring provider health, real-time costs, usage stats, routing decision logs, and system diagnostics. |
-| 11 | Plugin / Extension System | MEDIUM | Architecture for third-party or community-built plugins, custom tools, new adapters, and agent templates. |
-| 12 | Billing & Usage Tracking | MEDIUM | Cost tracking per user, per agent, per provider. Budget alerts, spend dashboards, and usage reports. |
+| # | Component | Priority | Description | Status |
+| --- | --- | --- | --- | --- |
+| 1 | Authentication & API Key Management | CRITICAL | Secure vault or env-based key rotation system for all provider keys. Support for multiple key pools per provider to distribute rate limits. | 🔄 Partial — env vars supported, vault not yet built |
+| 2 | Rate Limiting & Quota Management | CRITICAL | Per-provider and per-user rate limit tracking to avoid 429 errors. Token-bucket or sliding-window algorithms. Budget caps per user/agent. | 📅 Planned — Week 10 (RateLimiter class) |
+| 3 | Error Recovery & Retry Logic | HIGH | Standardized retry with exponential backoff and jitter. Circuit breakers per provider. Graceful degradation on total provider failure. | 📅 Planned — Week 9 (CircuitBreaker + router) |
+| 4 | Streaming Infrastructure | HIGH | SSE or WebSocket layer for real-time token streaming to clients. Adapter-level stream normalization. | 📅 Planned — future phase |
+| 5 | Agent Manifest System | HIGH | Declarative YAML/JSON files defining each agent's system prompt, personality, available tools, model preferences, memory scope, and behavioral constraints. | 🔄 Partial — PipelineDefinition in agent_runtime.py |
+| 6 | User Session Management | HIGH | Session creation, unique session IDs, context persistence across conversation turns, session timeout and cleanup. | 🔄 Partial — session IDs in voice/therapy |
+| 7 | Vector Store Integration | MEDIUM | Embeddings database for semantic memory and RAG-style retrieval over past interactions. | 🔄 Partial — LocalVectorDB in local_runtime.py; Week 4 adds VectorStoreAdapter |
+| 8 | Fine-Tuning Pipeline | MEDIUM | Infrastructure for fine-tuning open-weight models on custom datasets. Version management, evaluation hooks, deployment to inference. | 📅 Planned — future phase |
+| 9 | Evaluation & Benchmarking Suite | MEDIUM | Automated testing of model outputs against quality benchmarks. Feeds updated scores back to Capabilities Graph. | 🔄 Partial — BenchmarkSuite in app_framework.py |
+| 10 | Admin Dashboard | MEDIUM | Web UI for monitoring provider health, real-time costs, usage stats, routing decision logs, and system diagnostics. | 📅 Planned — Week 10 (ObservabilityDashboard) |
+| 11 | Plugin / Extension System | MEDIUM | Architecture for third-party or community-built plugins, custom tools, new adapters, and agent templates. | ✅ Implemented — plugins/ directory, PluginMarketplace |
+| 12 | Billing & Usage Tracking | MEDIUM | Cost tracking per user, per agent, per provider. Budget alerts, spend dashboards, and usage reports. | 📅 Planned — Week 10 (ObservabilityDashboard) |
 
 ## 10. Next Steps Roadmap
 

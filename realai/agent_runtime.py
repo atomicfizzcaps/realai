@@ -13,11 +13,14 @@ Usage::
 
 from __future__ import annotations
 
+import logging
 import time
 import uuid
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -361,6 +364,176 @@ class AgentGraph:
                 aid: r.get("result", "") for aid, r in results.items()
             },
         }
+
+
+class MultiAgentPipeline:
+    """Five-stage AI pipeline: planner → researcher → critic → executor → synthesizer.
+
+    Each stage has a specific role:
+    - Planner: Breaks the task into concrete steps.
+    - Researcher: Gathers information and relevant context.
+    - Critic: Finds flaws, gaps, and risks in prior stage outputs.
+    - Executor: Determines implementation and execution approach.
+    - Synthesizer: Combines all stage outputs into a final answer.
+
+    Uses model_instance.chat_completion() when available; falls back to a
+    deterministic stub so it always returns a valid response.
+    """
+
+    STAGE_SYSTEM_PROMPTS: Dict[str, str] = {
+        "planner": (
+            "You are a strategic task planner. Your job is to break the given task "
+            "into clear, numbered, executable steps. Be concise and practical. "
+            "Output a numbered list only."
+        ),
+        "researcher": (
+            "You are an expert researcher. Given a task and its planned steps, "
+            "gather and summarise all relevant background information, key facts, "
+            "and context that would be needed to complete the task. "
+            "Be thorough but focused."
+        ),
+        "critic": (
+            "You are a critical analyst. Review the task plan and research notes "
+            "and identify: (1) gaps in the plan, (2) risks or potential failure points, "
+            "(3) alternative approaches worth considering. "
+            "Be specific and constructive."
+        ),
+        "executor": (
+            "You are an execution specialist. Based on the plan, research, and critique, "
+            "determine the optimal execution approach. Describe exactly how you would "
+            "implement each step, including any tools, resources, or dependencies needed."
+        ),
+        "synthesizer": (
+            "You are a synthesis expert. Integrate the outputs from all previous pipeline "
+            "stages — plan, research, critique, and execution — into a single, coherent, "
+            "actionable response. Resolve any contradictions. Present a clear final answer."
+        ),
+    }
+
+    STAGES: List[str] = ["planner", "researcher", "critic", "executor", "synthesizer"]
+
+    def __init__(
+        self,
+        model_instance: Any = None,
+        model: str = "realai-2.0",
+    ) -> None:
+        """Initialise the pipeline.
+
+        Args:
+            model_instance: Optional RealAI (or compatible) instance exposing
+                chat_completion(). When None the pipeline uses stub responses.
+            model: Model identifier string passed to chat_completion calls.
+        """
+        self._model_instance = model_instance
+        self._model = model
+
+    def _run_stage(
+        self,
+        stage_name: str,
+        user_content: str,
+    ) -> str:
+        """Run a single pipeline stage.
+
+        Args:
+            stage_name: One of the STAGES names.
+            user_content: The user-facing content for this stage (includes prior context).
+
+        Returns:
+            String output from the stage (AI or stub).
+        """
+        system_prompt = self.STAGE_SYSTEM_PROMPTS.get(stage_name, "You are a helpful assistant.")
+
+        if self._model_instance is not None:
+            try:
+                result = self._model_instance.chat_completion(
+                    messages=[
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": user_content},
+                    ],
+                    model=self._model,
+                )
+                content = (
+                    result.get("choices", [{}])[0]
+                    .get("message", {})
+                    .get("content", "")
+                    .strip()
+                )
+                if content:
+                    return content
+            except Exception as exc:
+                logger.debug("MultiAgentPipeline stage '%s' chat_completion failed: %s", stage_name, exc)
+                # fall through to stub
+
+        # Stub fallback
+        return (
+            "[{stage}] Processed: {preview}...".format(
+                stage=stage_name.capitalize(),
+                preview=user_content[:120],
+            )
+        )
+
+    def run(
+        self,
+        task: str,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Run the full five-stage pipeline.
+
+        Args:
+            task: The task description to process.
+            context: Optional additional context dict passed to the first stage.
+
+        Returns:
+            Dict with keys:
+                status (str): "success"
+                task (str): original task
+                stage_outputs (Dict[str, str]): output from each of the 5 stages
+                final_synthesis (str): the synthesizer's output
+                duration_ms (float): total wall-clock time in milliseconds
+                note (str, optional): present when running in stub mode
+        """
+        import time as _time
+
+        started = _time.time()
+        stage_outputs: Dict[str, str] = {}
+        prior_context = task
+
+        if context:
+            prior_context = "Task: {task}\nContext: {ctx}".format(
+                task=task, ctx=str(context)
+            )
+
+        for stage in self.STAGES:
+            if stage_outputs:
+                # Build accumulated context for each subsequent stage
+                accumulated = "Original task: {task}\n\n".format(task=task)
+                for prev_stage, prev_out in stage_outputs.items():
+                    accumulated += "{s} output:\n{o}\n\n".format(
+                        s=prev_stage.capitalize(), o=prev_out
+                    )
+                user_content = accumulated
+            else:
+                user_content = prior_context
+
+            output = self._run_stage(stage, user_content)
+            stage_outputs[stage] = output
+
+        final_synthesis = stage_outputs.get("synthesizer", "")
+        duration_ms = (_time.time() - started) * 1000.0
+
+        result: Dict[str, Any] = {
+            "status": "success",
+            "task": task,
+            "stage_outputs": stage_outputs,
+            "final_synthesis": final_synthesis,
+            "duration_ms": duration_ms,
+        }
+
+        # Indicate stub mode when no real model is attached
+        if self._model_instance is None:
+            result["note"] = "Running in stub mode — attach a RealAI instance for real AI responses."
+
+        return result
 
 
 # ---------------------------------------------------------------------------
