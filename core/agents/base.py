@@ -1,7 +1,5 @@
 from typing import Any, Dict, List, Protocol
 
-from core.api.schemas.chat import ChatMessage
-
 
 class AgentContext(Dict[str, Any]):
     ...
@@ -12,7 +10,7 @@ class Agent(Protocol):
 
     def step(
         self,
-        messages: List[ChatMessage],
+        messages: List[Any],
         context: AgentContext,
     ) -> Dict[str, Any]:
         ...
