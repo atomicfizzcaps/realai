@@ -497,6 +497,50 @@ def test_week7_tool_call_validation():
     print("✓ Week-7 tool call validation test passed")
 
 
+def test_week9_model_cache():
+    """Test model cache lazy loading and hot reload clear behavior."""
+    print("Testing week-9 model cache...")
+    from core.models.cache import ModelCache
+
+    cache = ModelCache()
+    counter = {"n": 0}
+
+    def _loader():
+        counter["n"] += 1
+        return {"id": "demo"}
+
+    first = cache.get("demo", _loader)
+    second = cache.get("demo", _loader)
+    assert first["id"] == "demo"
+    assert second["id"] == "demo"
+    assert counter["n"] == 1
+    cache.clear()
+    cache.get("demo", _loader)
+    assert counter["n"] == 2
+    print("✓ Week-9 model cache test passed")
+
+
+def test_week9_health_and_reload_routes():
+    """Test health/readiness and model reload routes."""
+    print("Testing week-9 health/reload routes...")
+    try:
+        from apps.api.routes.health import health, ready
+        from apps.api.routes.models import reload_models
+    except ImportError:
+        print("✓ Week-9 health/reload routes skipped (FastAPI unavailable)")
+        return
+
+    health_payload = health()
+    assert health_payload.get("status") == "ok"
+
+    reload_payload = reload_models()
+    assert reload_payload.get("status") == "reloaded"
+
+    ready_payload = ready()
+    assert "models_loaded" in ready_payload
+    print("✓ Week-9 health/reload routes test passed")
+
+
 def test_structured_training_pipeline():
     """Test training dataset extraction helpers."""
     print("Testing structured training pipeline...")
@@ -3339,6 +3383,8 @@ def run_all_tests():
         test_week7_agent_safety_limits,
         test_week7_web3_policy,
         test_week7_tool_call_validation,
+        test_week9_model_cache,
+        test_week9_health_and_reload_routes,
         test_structured_training_pipeline,
         test_structured_sdk_facade,
         test_audio_transcription,

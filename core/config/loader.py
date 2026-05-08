@@ -1,5 +1,6 @@
 """Configuration loader for `realai.toml`."""
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +16,11 @@ class Config:
     """Load and read RealAI config using dot-notation keys."""
 
     def __init__(self, path: str = "realai.toml"):
-        self.path = Path(path)
+        requested = Path(path)
+        env_name = os.getenv("REALAI_ENV", "").strip().lower()
+        profile_name = {"production": "prod", "development": "dev"}.get(env_name, env_name)
+        profile_path = Path("config") / "{0}.toml".format(profile_name) if profile_name else None
+        self.path = profile_path if profile_path and profile_path.exists() else requested
         if not self.path.exists():
             self.data = {}
         else:
@@ -45,4 +50,3 @@ class Config:
                 return default
             node = node[part]
         return node
-

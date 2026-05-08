@@ -55,6 +55,7 @@ export async function POST(req: NextRequest) {
         messages: allMessages,
         temperature: settings.temperature,
         max_tokens: settings.maxTokens,
+        stream: Boolean((settings as any).stream),
       }),
     });
 
