@@ -155,3 +155,18 @@ Thumbs.db
 # AWS SAM
 .aws-sam/
 samconfig.toml
+
+# Visual Studio / VS Code cache
+.vs/
+.vscode/settings.json   # optional - only if you want to ignore personal settings
+*.slnx
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Frontend
+realai-frontend/node_modules/
+realai-frontend/.next/
