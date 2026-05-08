@@ -9,7 +9,7 @@ class AgentSafety:
 
     def validate_step(self, step_count: int):
         if int(step_count) > self.max_steps:
-            raise RuntimeError("Agent exceeded maximum step count.")
+            raise RuntimeError("Agent exceeded maximum step count: {0} > {1}".format(step_count, self.max_steps))
 
     def validate_tool_call(self, tool_call, allowed_tools):
         if not isinstance(tool_call, dict):
@@ -17,4 +17,3 @@ class AgentSafety:
         name = tool_call.get("name")
         if name not in set(allowed_tools or []):
             raise PermissionError("Tool not allowed")
-

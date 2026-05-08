@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 from apps.api.middleware.logging import RequestLogger
 from core.inference.local_stub import LocalStubChat, LocalStubEmbeddings
 from core.logging.logger import log
+from core.models.cache import ModelCache
 from core.inference.registry import InferenceRegistry
 from core.tools.code import CodeExecutionTool
 from core.tools.file import FileTool
@@ -32,6 +33,7 @@ MAX_REQUESTS_PER_SECOND = 10
 MAX_REQUESTS_PER_MINUTE = 100
 MAX_PAYLOAD_BYTES = 1 * 1024 * 1024
 _RATE_WINDOWS = defaultdict(deque)
+model_cache = ModelCache()
 
 inference_registry = InferenceRegistry()
 inference_registry.register_chat("realai-default", LocalStubChat())
@@ -103,12 +105,13 @@ async def security_middleware(request, call_next):
         raise
 
 
-from apps.api.routes import audio, chat, embeddings, metrics, models, tasks, voice_ws, web3  # noqa: E402
+from apps.api.routes import audio, chat, embeddings, health, metrics, models, tasks, voice_ws, web3  # noqa: E402
 
 app.include_router(chat.router)
 app.include_router(embeddings.router)
 app.include_router(models.router)
 app.include_router(metrics.router)
+app.include_router(health.router)
 app.include_router(tasks.router)
 app.include_router(audio.router)
 app.include_router(voice_ws.router)

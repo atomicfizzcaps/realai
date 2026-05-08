@@ -16,7 +16,15 @@ class Web3Policy:
 
     def require_approval(self, tx: Dict[str, Any]) -> Dict[str, Any]:
         if self._tx_value(tx) > 0 and not bool(tx.get("approved", False)):
-            return {"requires_approval": True, "tx": tx}
+            return {
+                "requires_approval": True,
+                "tx_summary": {
+                    "from": tx.get("from"),
+                    "to": tx.get("to"),
+                    "value": self._tx_value(tx),
+                    "nonce": tx.get("nonce"),
+                },
+            }
         return {"requires_approval": False}
 
     def validate_tx(self, tx: Dict[str, Any], context: Dict[str, Any] = None):
@@ -29,4 +37,3 @@ class Web3Policy:
         if approval.get("requires_approval"):
             raise PermissionError("Transaction requires human approval.")
         return {"ok": True, "value": value, "max_spend": max_spend}
-
