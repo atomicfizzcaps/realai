@@ -746,6 +746,99 @@ RealAI supports **17 comprehensive capabilities** out of the box:
 | **Plugin System** | **Extend anywhere with plugins** | **WordPress, VSCode** |
 | **Learning/Memory** | **Learns from every interaction** | **Adaptive AI** |
 
+## 🔌 Running Offline (No API Key Required)
+
+RealAI is designed to be useful even without any API keys. Many capabilities work immediately out of the box with intelligent stub responses that mirror the real response schema.
+
+### ✅ Works Fully Offline (No API Key)
+
+| Capability | How It Works Offline |
+|---|---|
+| Chat Completion | Returns stub conversational responses |
+| Web Research | Returns structured stub findings |
+| Task Automation | AI planning with stub execution |
+| Business Planning | Returns a complete 10-section stub business plan |
+| Therapy & Counseling | Evidence-based stub support with safety disclaimers |
+| Embeddings | Uses `sentence-transformers` locally, or returns zero vectors |
+| Code Generation | Returns stub code with explanation |
+| Code Execution | Executes Python locally in a subprocess |
+| Translation | Returns stub translated text |
+| Chain-of-Thought | Returns stub reasoning steps |
+| Knowledge Synthesis | Returns stub cross-domain insights |
+| Self-Reflection | Returns stub meta-analysis |
+| Multi-Agent Orchestration | Returns stub stage outputs |
+| Plugin System | Local plugins load and run without a network |
+| Memory & Learning | Fully local multi-tier memory engine |
+
+### 🔄 Partial Offline Support
+
+| Capability | What's Needed |
+|---|---|
+| Image Generation | `OPENAI_API_KEY` for real images; stub URL returned otherwise |
+| Audio Transcription | `OPENAI_API_KEY` or local Whisper model |
+| Audio Generation (TTS) | `OPENAI_API_KEY` for cloud TTS; stub URL returned otherwise |
+| Web Research (live) | `requests` + `beautifulsoup4` for real web fetching |
+| Web3 Integration | `web3` library + `WEB3_PROVIDER_URL` |
+
+### 🏠 Local Model Support
+
+Use `provider="local"` to route all requests to a locally running model server (e.g. Ollama, LM Studio, llama.cpp):
+
+```python
+from realai import RealAI
+model = RealAI(provider="local", base_url="http://localhost:11434/v1")
+r = model.chat_completion([{"role": "user", "content": "Hello!"}])
+```
+
+Set `REALAI_LOCAL_BASE_URL` to make this the default without changing code.
+
+---
+
+## 🚀 Quick Demo Scripts
+
+All five examples below run **without any API key**:
+
+```python
+from realai import RealAI
+model = RealAI()
+
+# Example 1: Chat (no API key)
+r = model.chat_completion([{"role": "user", "content": "Hello, RealAI!"}])
+print(r["choices"][0]["message"]["content"])
+
+# Example 2: Web Research (no API key, no network needed for stub)
+r = model.web_research("quantum computing breakthroughs")
+print(r["summary"])
+
+# Example 3: Task Automation (no API key)
+r = model.automate_task("research", {"topic": "machine learning"})
+print(r["plan"])
+
+# Example 4: Business Planning (no API key)
+r = model.business_planning("tech startup")
+print(r["business_plan"]["executive_summary"])
+
+# Example 5: Therapy Support (no API key)
+r = model.therapy_counseling("support", "I feel stressed about work")
+print(r["response"])
+```
+
+Run them all at once:
+
+```bash
+python -c "
+from realai import RealAI
+m = RealAI()
+print('Chat:',       m.chat_completion([{'role':'user','content':'Hi!'}])['choices'][0]['message']['content'][:60])
+print('Research:',   m.web_research('AI trends')['summary'][:60])
+print('Task:',       m.automate_task('research', {'topic':'ML'})['plan'][:60])
+print('Business:',   m.business_planning('tech startup')['business_plan']['executive_summary'][:60])
+print('Therapy:',    m.therapy_counseling('support', 'stressed')['response'][:60])
+"
+```
+
+---
+
 ## Why RealAI?
 
 - ✅ **NO LIMITS**: Truly can do anything - the sky is the limit!
