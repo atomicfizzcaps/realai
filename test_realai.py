@@ -3539,6 +3539,18 @@ def run_all_tests():
         test_tool_execution_record,
         test_multi_agent_pipeline,
         test_multi_agent_orchestration,
+        test_privacy_tier,
+        test_user_memory_scope,
+        test_entity_extractor,
+        test_retention_policy,
+        test_vector_store_adapter,
+        test_business_plan_funding_estimate,
+        test_therapy_disclaimer_always_present,
+        test_therapy_crisis_detection,
+        test_citation_engine,
+        test_web_research_sources_cited,
+        test_voice_session_generator,
+        test_record_audio_fallback,
     ]
     
     passed = 0
@@ -3693,6 +3705,227 @@ def test_multi_agent_orchestration():
         assert stage in stages, f"Missing stage: {stage}"
 
     print("✓ Multi-agent orchestration test passed")
+
+
+def test_privacy_tier():
+    """Test PrivacyTier enum values."""
+    from realai.memory.engine import PrivacyTier
+    assert PrivacyTier.EPHEMERAL.value == "ephemeral"
+    assert PrivacyTier.SESSION.value == "session"
+    assert PrivacyTier.PERSISTENT.value == "persistent"
+    print("✓ Privacy tier test passed")
+
+
+def test_user_memory_scope():
+    """Test UserMemoryScope stores and retrieves per-user with isolation."""
+    from realai.memory.engine import UserMemoryScope, PrivacyTier
+
+    scope = UserMemoryScope("alice", PrivacyTier.SESSION)
+    item_id = scope.store("Alice likes cats", tags=["preference"])
+    assert isinstance(item_id, str) and len(item_id) > 0
+
+    results = scope.retrieve("cats", top_k=5)
+    contents = [r.content for r in results]
+    assert any("Alice" in c or "cats" in c for c in contents), "Expected to find stored content"
+
+    # Isolation: bob's scope should not contain alice's data
+    scope_b = UserMemoryScope("bob", PrivacyTier.SESSION)
+    bob_results = scope_b.retrieve("Alice likes cats", top_k=5)
+    for item in bob_results:
+        assert "Alice likes cats" not in item.content, "Memory isolation violated"
+
+    # Ephemeral clear
+    scope_e = UserMemoryScope("ephemeral_user", PrivacyTier.EPHEMERAL)
+    eid = scope_e.store("temp memory")
+    count = scope_e.clear_ephemeral()
+    assert count >= 1
+
+    print("✓ User memory scope test passed")
+
+
+def test_entity_extractor():
+    """Test extract_entities detects various entity types."""
+    from realai.memory.engine import extract_entities
+
+    text = "Email me at user@example.com or visit https://example.com on 2025-01-15. Call @johndoe or use #AI"
+    entities = extract_entities(text)
+    types = [e["type"] for e in entities]
+    assert "EMAIL" in types, "EMAIL not detected"
+    assert "URL" in types, "URL not detected"
+    assert "DATE" in types, "DATE not detected"
+    assert "MENTION" in types, "MENTION not detected"
+    assert "HASHTAG" in types, "HASHTAG not detected"
+
+    # Check values
+    emails = [e["value"] for e in entities if e["type"] == "EMAIL"]
+    assert "user@example.com" in emails
+
+    print("✓ Entity extractor test passed")
+
+
+def test_retention_policy():
+    """Test RetentionPolicy expires items based on TTL."""
+    import time
+    from realai.memory.engine import RetentionPolicy, MemoryItem
+
+    policy = RetentionPolicy(ttl_seconds=1.0)
+    fresh = MemoryItem(id="1", content="fresh", timestamp=time.time(), score=1.0)
+    old = MemoryItem(id="2", content="old", timestamp=time.time() - 100.0, score=1.0)
+
+    assert not policy.is_expired(fresh), "Fresh item should not be expired"
+    assert policy.is_expired(old), "Old item should be expired"
+
+    filtered = policy.apply([fresh, old])
+    assert len(filtered) == 1
+    assert filtered[0].id == "1"
+
+    print("✓ Retention policy test passed")
+
+
+def test_vector_store_adapter():
+    """Test LocalVectorStore add/search/delete."""
+    from realai.memory.engine import LocalVectorStore
+
+    store = LocalVectorStore()
+    vec_a = [1.0, 0.0, 0.0]
+    vec_b = [0.0, 1.0, 0.0]
+    vec_c = [1.0, 0.1, 0.0]  # Close to vec_a
+
+    store.add("a", vec_a, {"label": "A"})
+    store.add("b", vec_b, {"label": "B"})
+    store.add("c", vec_c, {"label": "C"})
+
+    # Query closest to vec_a
+    results = store.search(vec_a, top_k=2)
+    assert len(results) == 2
+    ids = [r["id"] for r in results]
+    assert "a" in ids, "Expected 'a' in top results"
+
+    # Delete
+    deleted = store.delete("a")
+    assert deleted is True
+    assert store.delete("nonexistent") is False
+
+    results2 = store.search(vec_a, top_k=3)
+    ids2 = [r["id"] for r in results2]
+    assert "a" not in ids2
+
+    print("✓ Vector store adapter test passed")
+
+
+def test_business_plan_funding_estimate():
+    """Test _estimate_funding_needs returns correct ranges by business type."""
+    from realai import RealAI
+    model = RealAI()
+
+    tech = model._estimate_funding_needs("tech startup")
+    assert tech["min_usd"] == 500_000
+    assert tech["max_usd"] == 2_000_000
+    assert tech["stage"] == "seed"
+
+    restaurant = model._estimate_funding_needs("restaurant")
+    assert restaurant["min_usd"] == 100_000
+    assert restaurant["stage"] == "pre-seed"
+
+    ecom = model._estimate_funding_needs("e-commerce store")
+    assert ecom["min_usd"] == 50_000
+
+    # Unknown type gets default
+    default = model._estimate_funding_needs("exotic business type xyz")
+    assert "min_usd" in default
+    assert "max_usd" in default
+    assert "stage" in default
+
+    print("✓ Business plan funding estimate test passed")
+
+
+def test_therapy_disclaimer_always_present():
+    """Test therapy_counseling always includes disclaimer."""
+    from realai import RealAI
+    model = RealAI()
+    r = model.therapy_counseling("support", "I feel anxious")
+    assert "disclaimer" in r or "IMPORTANT" in r.get("response", ""), "Disclaimer missing"
+    assert "crisis_detected" in r
+    assert r.get("crisis_detected") is False  # no crisis keywords
+
+    print("✓ Therapy disclaimer always present test passed")
+
+
+def test_therapy_crisis_detection():
+    """Test crisis keywords trigger hotline in therapy response."""
+    from realai import RealAI
+    model = RealAI()
+    r = model.therapy_counseling("support", "I want to kill myself")
+    assert r.get("crisis_detected") is True, "crisis_detected flag not set"
+    response_str = r.get("response", "")
+    assert "988" in response_str or "crisis" in response_str.lower(), "Crisis hotline text missing"
+
+    print("✓ Therapy crisis detection test passed")
+
+
+def test_citation_engine():
+    """Test CitationEngine adds, deduplicates, and formats sources."""
+    from realai import CitationEngine
+
+    ce = CitationEngine()
+    cid1 = ce.add_source("https://example.com", title="Example", snippet="Hello world")
+    assert cid1 == "[1]"
+    # Deduplication
+    cid1_dup = ce.add_source("https://example.com", title="Example duplicate")
+    assert cid1_dup == "[1]"
+
+    cid2 = ce.add_source("https://another.com", title="Another")
+    assert cid2 == "[2]"
+
+    citations = ce.get_citations()
+    assert len(citations) == 2
+
+    bib = ce.format_bibliography()
+    assert "[1]" in bib and "[2]" in bib
+    assert "example.com" in bib
+
+    # Rate limit check
+    assert ce.check_rate_limit("https://example.com", min_interval_secs=0.0)
+
+    print("✓ Citation engine test passed")
+
+
+def test_web_research_sources_cited():
+    """Test web_research returns sources_cited list."""
+    from realai import RealAI
+    model = RealAI()
+    r = model.web_research("python programming", depth="quick")
+    # sources_cited should be present (may be empty if network unavailable)
+    assert "sources_cited" in r or r.get("status") == "success", "sources_cited missing from response"
+
+    print("✓ Web research sources cited test passed")
+
+
+def test_voice_session_generator():
+    """Test voice_session generator yields expected event types."""
+    from realai import RealAI
+    model = RealAI()
+    events = list(model.voice_session("test-session-1"))
+    assert len(events) == 3, "Expected 3 events from voice_session"
+    assert events[0]["type"] == "start"
+    assert events[0]["session_id"] == "test-session-1"
+    assert events[1]["type"] == "partial"
+    assert "text" in events[1]
+    assert events[2]["type"] == "end"
+    assert "duration_ms" in events[2]
+
+    print("✓ Voice session generator test passed")
+
+
+def test_record_audio_fallback():
+    """Test _record_audio gracefully handles missing pyaudio."""
+    from realai import RealAI
+    model = RealAI()
+    result = model._record_audio(duration_secs=1)
+    # Should either succeed (pyaudio available) or return unavailable/error
+    assert result.get("status") in ("success", "unavailable", "error"), \
+        "Unexpected status: {0}".format(result.get("status"))
+    print("✓ Record audio fallback test passed")
 
 
 if __name__ == "__main__":

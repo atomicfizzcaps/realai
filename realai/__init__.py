@@ -1946,6 +1946,91 @@ class ComputerMode:
 _computer_mode = ComputerMode()
 
 
+class CitationEngine:
+    """Tracks source URLs and generates formatted citation strings.
+
+    Maintains a list of sources with deduplication and per-domain rate limiting.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty citation engine."""
+        self._sources: List[Dict[str, Any]] = []
+        self._domain_last_hit: Dict[str, float] = {}
+
+    def add_source(self, url: str, title: str = "", snippet: str = "") -> str:
+        """Add a source and return its citation ID (e.g. "[1]").
+
+        Deduplicates by URL — returns existing citation ID if already present.
+
+        Args:
+            url: Source URL.
+            title: Optional page title.
+            snippet: Optional excerpt from the page.
+
+        Returns:
+            Citation ID string like "[1]", "[2]", etc.
+        """
+        for source in self._sources:
+            if source["url"] == url:
+                return source["id"]
+
+        cit_id = "[{0}]".format(len(self._sources) + 1)
+        self._sources.append({
+            "id": cit_id,
+            "url": url,
+            "title": title,
+            "snippet": snippet,
+            "cited_at": time.time(),
+        })
+        return cit_id
+
+    def get_citations(self) -> List[Dict[str, Any]]:
+        """Return all sources with their metadata.
+
+        Returns:
+            List of dicts with keys: id, url, title, snippet, cited_at.
+        """
+        return list(self._sources)
+
+    def check_rate_limit(self, url: str, min_interval_secs: float = 1.0) -> bool:
+        """Check whether it is safe to fetch this URL (per-domain rate limit).
+
+        Args:
+            url: URL to check.
+            min_interval_secs: Minimum seconds between requests to the same domain.
+
+        Returns:
+            True if the request is allowed, False if rate-limited.
+        """
+        try:
+            from urllib.parse import urlparse
+            domain = urlparse(url).netloc
+        except Exception:
+            domain = url
+        last = self._domain_last_hit.get(domain, 0.0)
+        now = time.time()
+        if now - last >= min_interval_secs:
+            self._domain_last_hit[domain] = now
+            return True
+        return False
+
+    def format_bibliography(self) -> str:
+        """Return a formatted bibliography string.
+
+        Returns:
+            Multi-line string with one source per line.
+        """
+        if not self._sources:
+            return "No sources cited."
+        lines = []
+        for src in self._sources:
+            title = src.get("title") or src["url"]
+            lines.append("{id} {title} — {url}".format(
+                id=src["id"], title=title, url=src["url"]
+            ))
+        return "\n".join(lines)
+
+
 class RealAI:
     """
     RealAI - The limitless AI model that can truly do anything.
@@ -2998,6 +3083,10 @@ class RealAI:
                 "summary": f"Aggregated {len(findings_list)} source(s) for query '{query}'.",
                 "sources": resolved_sources if resolved_sources else urls_to_fetch,
                 "source_details": findings_list,
+                "sources_cited": [
+                    {"id": "[{0}]".format(idx), "url": f["url"], "title": f.get("title", ""), "snippet": f.get("snippet", "")[:200]}
+                    for idx, f in enumerate(findings_list, start=1)
+                ],
                 "citations": [
                     {
                         "index": idx,
@@ -3040,6 +3129,7 @@ class RealAI:
                 "freshness": "fallback",
                 "cached": False,
                 "source_details": [],
+                "sources_cited": [],
                 "citations": [],
             }, capability=ModelCapability.WEB_RESEARCH.value, modality="text")
     
@@ -3131,7 +3221,339 @@ class RealAI:
             "details": details,
             "confirmation": "Appointment booked successfully"
         }
-    
+
+    def _automate_email(self, to: str, subject: str, body: str) -> Dict[str, Any]:
+        """Send an email via SMTP when env vars are configured, else return a plan.
+
+        Reads SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS from environment.
+
+        Args:
+            to: Recipient email address.
+            subject: Email subject line.
+            body: Email body text.
+
+        Returns:
+            Dict with status, message, and plan fields.
+        """
+        plan = {
+            "to": to,
+            "subject": subject,
+            "body_preview": body[:100],
+            "status": "planned",
+            "message": "Email will be sent when SMTP is configured.",
+        }
+
+        smtp_host = os.environ.get("SMTP_HOST")
+        smtp_user = os.environ.get("SMTP_USER")
+        smtp_pass = os.environ.get("SMTP_PASS")
+
+        if not smtp_host or not smtp_user or not smtp_pass:
+            return plan
+
+        try:
+            import smtplib
+            from email.mime.text import MIMEText as _MIMEText
+
+            smtp_port = int(os.environ.get("SMTP_PORT", "587"))
+            msg = _MIMEText(body)
+            msg["Subject"] = subject
+            msg["From"] = smtp_user
+            msg["To"] = to
+
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+
+            return {
+                "to": to,
+                "subject": subject,
+                "status": "sent",
+                "message": "Email sent successfully.",
+            }
+        except Exception as e:
+            return {
+                "to": to,
+                "subject": subject,
+                "status": "failed",
+                "message": "Email failed: {0}".format(str(e)),
+            }
+
+    def _automate_search(self, query: str, max_results: int = 5) -> List[Dict[str, Any]]:
+        """Search using DuckDuckGo HTML and return structured results.
+
+        Args:
+            query: Search query string.
+            max_results: Maximum number of results to return.
+
+        Returns:
+            List of dicts each with "title", "url", and "snippet" keys.
+            Returns empty list on error or if dependencies unavailable.
+        """
+        results: List[Dict[str, Any]] = []
+        try:
+            import requests as _req
+            from bs4 import BeautifulSoup as _BS
+
+            session = _req.Session()
+            session.headers.update({"User-Agent": "RealAI/2.0 (+https://github.com/Unwrenchable/realai)"})
+            r = session.post(
+                "https://html.duckduckgo.com/html/",
+                data={"q": query},
+                timeout=8,
+            )
+            r.raise_for_status()
+            soup = _BS(r.text, "html.parser")
+
+            for result_div in soup.find_all("div", class_="result")[:max_results]:
+                title_tag = result_div.find("a", class_="result__a")
+                snippet_tag = result_div.find("a", class_="result__snippet")
+                if title_tag:
+                    title = title_tag.get_text(strip=True)
+                    url = title_tag.get("href", "")
+                    snippet = snippet_tag.get_text(strip=True) if snippet_tag else ""
+                    results.append({"title": title, "url": url, "snippet": snippet})
+        except Exception:
+            pass
+        return results
+
+    def _record_audio(
+        self,
+        duration_secs: int = 5,
+        output_path: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Record audio from the microphone using pyaudio.
+
+        Falls back gracefully when pyaudio is not installed.
+
+        Args:
+            duration_secs: Recording duration in seconds.
+            output_path: Optional file path to save WAV. Uses temp file if None.
+
+        Returns:
+            Dict with status, path (if saved), and message fields.
+        """
+        try:
+            import pyaudio
+            import wave
+
+            _CHUNK = 1024
+            _FORMAT = pyaudio.paInt16
+            _CHANNELS = 1
+            _RATE = 16000
+
+            pa = pyaudio.PyAudio()
+            stream = pa.open(
+                format=_FORMAT,
+                channels=_CHANNELS,
+                rate=_RATE,
+                input=True,
+                frames_per_buffer=_CHUNK,
+            )
+            frames = []
+            for _ in range(int(_RATE / _CHUNK * duration_secs)):
+                frames.append(stream.read(_CHUNK, exception_on_overflow=False))
+            stream.stop_stream()
+            stream.close()
+            pa.terminate()
+
+            if output_path is None:
+                import tempfile
+                with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                    output_path = tmp.name
+
+            with wave.open(output_path, "wb") as wf:
+                wf.setnchannels(_CHANNELS)
+                wf.setsampwidth(pa.get_sample_size(_FORMAT))
+                wf.setframerate(_RATE)
+                wf.writeframes(b"".join(frames))
+
+            return {"status": "success", "path": output_path, "duration_secs": duration_secs}
+        except ImportError:
+            return {
+                "status": "unavailable",
+                "path": None,
+                "message": "pyaudio not installed. Install with: pip install pyaudio",
+            }
+        except Exception as e:
+            return {"status": "error", "path": None, "message": str(e)}
+
+    def voice_session(self, session_id: Optional[str] = None):
+        """Generator for a streaming voice session.
+
+        Yields partial response dicts. Text-only path is used when pyaudio
+        is not available; the generator always completes gracefully.
+
+        Args:
+            session_id: Optional session identifier. Generated if not provided.
+
+        Yields:
+            Dicts with "type" key:
+              - {"type": "start", "session_id": str}
+              - {"type": "partial", "text": str, "audio_chunk": None}
+              - {"type": "end", "session_id": str, "duration_ms": float}
+        """
+        import time as _time
+
+        sid = session_id or "voice-{0}".format(int(_time.time()))
+        started = _time.time()
+
+        yield {"type": "start", "session_id": sid}
+
+        # Attempt to get a text response (text-only fallback path)
+        try:
+            partial_text = "Voice session active. How can I help you?"
+            result = self.chat_completion([
+                {"role": "system", "content": "You are a concise voice assistant."},
+                {"role": "user", "content": "Hello"},
+            ])
+            content = (
+                result.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if content:
+                partial_text = content
+        except Exception:
+            partial_text = "Voice session active. How can I help you?"
+
+        yield {"type": "partial", "text": partial_text, "audio_chunk": None}
+
+        duration_ms = (_time.time() - started) * 1000.0
+        yield {"type": "end", "session_id": sid, "duration_ms": duration_ms}
+
+    def _summarize_page(self, url: str, content: str) -> str:
+        """Summarize page content using AI if available, else return first 500 chars.
+
+        Args:
+            url: Source URL (used as context for the AI).
+            content: Raw page text content.
+
+        Returns:
+            Summary string.
+        """
+        try:
+            result = self.chat_completion([
+                {
+                    "role": "system",
+                    "content": "Summarize the following web page content in 2-3 sentences.",
+                },
+                {
+                    "role": "user",
+                    "content": "URL: {url}\n\nContent:\n{content}".format(
+                        url=url, content=content[:2000]
+                    ),
+                },
+            ])
+            summary = (
+                result.get("choices", [{}])[0]
+                .get("message", {})
+                .get("content", "")
+                .strip()
+            )
+            if summary:
+                return summary
+        except Exception:
+            pass
+        return content[:500]
+
+    def _fact_check(
+        self,
+        claim: str,
+        sources: List[str],
+    ) -> Dict[str, Any]:
+        """Fact-check a claim against a list of source texts.
+
+        Args:
+            claim: The claim to verify.
+            sources: List of source text strings to check against.
+
+        Returns:
+            Dict with keys: claim, verified (bool), confidence (float 0-1),
+            supporting_sources (List[str]), contradicting_sources (List[str]).
+        """
+        supporting: List[str] = []
+        contradicting: List[str] = []
+
+        claim_lower = claim.lower()
+        for source in sources:
+            src_lower = source.lower()
+            # Simple keyword overlap heuristic
+            claim_words = set(re.findall(r"\w+", claim_lower))
+            src_words = set(re.findall(r"\w+", src_lower))
+            overlap = claim_words & src_words
+            if len(overlap) > max(2, len(claim_words) * 0.3):
+                supporting.append(source[:200])
+            elif any(neg in src_lower for neg in ("not", "false", "incorrect", "wrong", "no evidence")):
+                contradicting.append(source[:200])
+
+        total = len(supporting) + len(contradicting) or 1
+        confidence = len(supporting) / total
+        verified = confidence >= 0.5
+
+        return {
+            "claim": claim,
+            "verified": verified,
+            "confidence": round(confidence, 2),
+            "supporting_sources": supporting,
+            "contradicting_sources": contradicting,
+        }
+
+    def _estimate_funding_needs(self, business_type: str) -> Dict[str, Any]:
+        """Return a simple funding range estimate based on business type keyword matching.
+
+        Args:
+            business_type: String describing the business (e.g. "tech startup", "restaurant").
+
+        Returns:
+            Dict with min_usd, max_usd, stage, and note fields.
+        """
+        bt = business_type.lower()
+
+        if any(kw in bt for kw in ("tech", "software", "saas", "app", "startup", "ai", "platform")):
+            return {
+                "min_usd": 500_000,
+                "max_usd": 2_000_000,
+                "stage": "seed",
+                "note": "Tech startups typically raise $500K–$2M at seed stage.",
+            }
+        if any(kw in bt for kw in ("restaurant", "food", "cafe", "bar", "bakery")):
+            return {
+                "min_usd": 100_000,
+                "max_usd": 500_000,
+                "stage": "pre-seed",
+                "note": "Food/restaurant businesses typically require $100K–$500K to open.",
+            }
+        if any(kw in bt for kw in ("e-commerce", "ecommerce", "online store", "retail", "shop")):
+            return {
+                "min_usd": 50_000,
+                "max_usd": 200_000,
+                "stage": "pre-seed",
+                "note": "E-commerce businesses can start with $50K–$200K.",
+            }
+        if any(kw in bt for kw in ("consulting", "agency", "freelance", "service")):
+            return {
+                "min_usd": 10_000,
+                "max_usd": 50_000,
+                "stage": "bootstrapped",
+                "note": "Service businesses can often be started with $10K–$50K.",
+            }
+        if any(kw in bt for kw in ("manufacturing", "factory", "hardware", "physical")):
+            return {
+                "min_usd": 1_000_000,
+                "max_usd": 5_000_000,
+                "stage": "series-a",
+                "note": "Manufacturing businesses typically require $1M–$5M in capital.",
+            }
+        # Default
+        return {
+            "min_usd": 50_000,
+            "max_usd": 500_000,
+            "stage": "pre-seed",
+            "note": "Typical early-stage business funding range.",
+        }
+
     def automate_task(
         self,
         task_type: str,
@@ -3411,8 +3833,19 @@ class RealAI:
 
         try:
             system_prompt = (
-                f"You are an expert business consultant. Create a comprehensive business plan "
-                f"for a {business_type} at {stage} stage.\n"
+                "You are an expert business consultant and strategic advisor with 20+ years experience.\n"
+                f"Create a comprehensive business plan for a {business_type} at {stage} stage.\n\n"
+                "Cover these 10 sections:\n"
+                "1. Executive Summary\n"
+                "2. Problem Statement & Solution\n"
+                "3. Market Analysis & TAM/SAM/SOM\n"
+                "4. Competitive Landscape\n"
+                "5. Business Model & Revenue Streams\n"
+                "6. Marketing & Customer Acquisition Strategy\n"
+                "7. Operations Plan & Team Structure\n"
+                "8. Financial Projections (3-year)\n"
+                "9. Risk Analysis & Mitigation\n"
+                "10. Funding Requirements & Use of Capital\n\n"
                 "Respond with a JSON object containing these exact keys: "
                 "executive_summary, market_analysis, financial_projections, "
                 "marketing_strategy, operations_plan, risk_analysis, "
@@ -3444,20 +3877,24 @@ class RealAI:
                     m = re.search(r"```(?:[a-zA-Z]*)?\s*([\s\S]*?)```", cleaned)
                     if m:
                         cleaned = m.group(1).strip()
-                parsed = json.loads(cleaned)
-                # Extract action_items list
-                if isinstance(parsed.get("action_items"), list):
-                    action_items = [str(x) for x in parsed.pop("action_items")]
-                # Remaining keys populate the business_plan dict
-                for key in [
-                    "executive_summary", "market_analysis",
-                    "financial_projections", "marketing_strategy",
-                    "operations_plan", "risk_analysis"
-                ]:
-                    if key in parsed and isinstance(parsed[key], str):
-                        business_plan[key] = parsed[key]
+                try:
+                    parsed = json.loads(cleaned)
+                    # Extract action_items list
+                    if isinstance(parsed.get("action_items"), list):
+                        action_items = [str(x) for x in parsed.pop("action_items")]
+                    # Remaining keys populate the business_plan dict
+                    for key in [
+                        "executive_summary", "market_analysis",
+                        "financial_projections", "marketing_strategy",
+                        "operations_plan", "risk_analysis"
+                    ]:
+                        if key in parsed and isinstance(parsed[key], str):
+                            business_plan[key] = parsed[key]
+                except (json.JSONDecodeError, ValueError):
+                    # Plain text fallback: populate executive_summary with the full text
+                    business_plan["executive_summary"] = ai_content[:500]
         except Exception:
-            pass  # fall back to static values
+            pass  # fall back to static values on any other error
 
         response = {
             "business_type": business_type,
@@ -3488,6 +3925,17 @@ class RealAI:
         Returns:
             Dict[str, Any]: Therapeutic response and recommendations
         """
+        _CRISIS_KEYWORDS = [
+            "suicide", "suicidal", "kill myself", "end my life",
+            "self-harm", "self harm", "hurt myself",
+            "don't want to live", "want to die", "overdose",
+        ]
+        _CRISIS_HOTLINE_TEXT = (
+            "\n\n🆘 CRISIS SUPPORT: If you are in immediate danger, please call "
+            "988 (Suicide & Crisis Lifeline in US) or your local emergency number "
+            "(911/999/112). You are not alone."
+        )
+        crisis_detected = any(kw in message.lower() for kw in _CRISIS_KEYWORDS)
         _THERAPY_DISCLAIMER = (
             "\n\n⚠️ IMPORTANT: This AI provides general wellbeing support only. "
             "It is not a substitute for professional mental health care. "
@@ -3560,16 +4008,22 @@ class RealAI:
         except Exception:
             pass  # fall back to static values
 
+        # Build response text: always include disclaimer; add crisis hotline if needed
+        full_response = ai_response_text + _THERAPY_DISCLAIMER
+        if crisis_detected:
+            full_response = full_response + _CRISIS_HOTLINE_TEXT
+
         response = {
-            "session_id": session_id or f"session-{int(time.time())}",
+            "session_id": session_id or "session-{0}".format(int(time.time())),
             "session_type": session_type,
             "approach": approach,
-            "response": ai_response_text + _THERAPY_DISCLAIMER,
+            "response": full_response,
             "insights": ai_insights,
             "techniques": ["Active listening", "Cognitive reframing", "Mindfulness"],
             "recommendations": recommendations,
             "resources": ["Mental health hotlines", "Professional referrals available"],
-            "disclaimer": "This is AI-assisted support. For serious concerns, please consult a licensed professional."
+            "disclaimer": "This is AI-assisted support. For serious concerns, please consult a licensed professional.",
+            "crisis_detected": crisis_detected,
         }
         return response
 
