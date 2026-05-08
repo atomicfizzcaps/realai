@@ -36,7 +36,7 @@ realai-overseer:
 realai-default-8b:
   type: chat
   backend: llama.cpp
-  path: meta-llama/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf
+  path: C:\llama\models\Llama-3.1-8B-Instruct-Q4_K_M.gguf
   context_length: 8192
   quantization: q4_k_m
   capabilities:
