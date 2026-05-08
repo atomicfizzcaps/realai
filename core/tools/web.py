@@ -35,6 +35,7 @@ class WebSearchTool(Tool):
                 timeout=5,
                 headers={"User-Agent": "realai-tool/1.0"},
             )
+            response.raise_for_status()
             text = response.text[:500]
             return {"results": [text], "query": query}
         except Exception as exc:
