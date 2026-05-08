@@ -15,10 +15,273 @@ from __future__ import annotations
 
 import hashlib
 import math
+import re
 import time
 import uuid
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Dict, List, Optional
+
+
+class PrivacyTier(Enum):
+    """Privacy tier for memory items.
+
+    Attributes:
+        EPHEMERAL: Not persisted; cleared at session end.
+        SESSION: Persisted for the duration of the session only.
+        PERSISTENT: Permanently stored across sessions.
+    """
+
+    EPHEMERAL = "ephemeral"
+    SESSION = "session"
+    PERSISTENT = "persistent"
+
+
+class VectorStoreAdapter(ABC):
+    """Abstract base class for vector store backends.
+
+    Implementations must provide add(), search(), and delete() methods.
+    """
+
+    @abstractmethod
+    def add(self, id: str, vector: List[float], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Add a vector to the store.
+
+        Args:
+            id: Unique identifier for the vector.
+            vector: Float list representing the embedding.
+            metadata: Optional dict of metadata to associate.
+        """
+
+    @abstractmethod
+    def search(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """Find the top_k most similar vectors.
+
+        Args:
+            query_vector: Query embedding.
+            top_k: Number of results to return.
+
+        Returns:
+            List of dicts with at minimum {"id": str, "score": float}.
+        """
+
+    @abstractmethod
+    def delete(self, id: str) -> bool:
+        """Delete a vector by ID.
+
+        Args:
+            id: The ID to delete.
+
+        Returns:
+            True if found and deleted, False otherwise.
+        """
+
+
+class LocalVectorStore(VectorStoreAdapter):
+    """Pure in-memory vector store using cosine similarity.
+
+    No external dependencies required.
+    """
+
+    def __init__(self) -> None:
+        """Initialize an empty local vector store."""
+        self._vectors: Dict[str, List[float]] = {}
+        self._metadata: Dict[str, Dict[str, Any]] = {}
+
+    def add(self, id: str, vector: List[float], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Store a vector with optional metadata.
+
+        Args:
+            id: Unique identifier.
+            vector: Embedding vector.
+            metadata: Optional metadata dict.
+        """
+        self._vectors[id] = vector
+        self._metadata[id] = metadata or {}
+
+    def search(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """Return top_k most similar vectors using cosine similarity.
+
+        Args:
+            query_vector: Query embedding.
+            top_k: Number of results to return.
+
+        Returns:
+            List of {"id": str, "score": float, "metadata": dict}, sorted by score descending.
+        """
+        scored = []
+        q_norm = math.sqrt(sum(v * v for v in query_vector)) or 1.0
+        for vec_id, vec in self._vectors.items():
+            dot = sum(a * b for a, b in zip(query_vector, vec))
+            v_norm = math.sqrt(sum(v * v for v in vec)) or 1.0
+            score = dot / (q_norm * v_norm)
+            scored.append({"id": vec_id, "score": score, "metadata": self._metadata.get(vec_id, {})})
+        scored.sort(key=lambda x: x["score"], reverse=True)
+        return scored[:top_k]
+
+    def delete(self, id: str) -> bool:
+        """Delete a vector by ID.
+
+        Args:
+            id: ID to delete.
+
+        Returns:
+            True if found and deleted.
+        """
+        if id in self._vectors:
+            del self._vectors[id]
+            self._metadata.pop(id, None)
+            return True
+        return False
+
+
+class ChromaVectorStore(VectorStoreAdapter):
+    """Optional ChromaDB-backed vector store.
+
+    Falls back to LocalVectorStore when chromadb is not installed.
+    """
+
+    def __init__(self, collection_name: str = "realai_memory") -> None:
+        """Initialize ChromaDB collection or fall back to LocalVectorStore.
+
+        Args:
+            collection_name: Name for the ChromaDB collection.
+        """
+        self._fallback: Optional[LocalVectorStore] = None
+        self._collection = None
+        try:
+            import chromadb  # type: ignore
+            client = chromadb.Client()
+            self._collection = client.get_or_create_collection(collection_name)
+        except Exception:
+            self._fallback = LocalVectorStore()
+
+    def add(self, id: str, vector: List[float], metadata: Optional[Dict[str, Any]] = None) -> None:
+        """Add a vector to ChromaDB or fallback store."""
+        if self._fallback is not None:
+            self._fallback.add(id, vector, metadata)
+            return
+        try:
+            self._collection.add(
+                embeddings=[vector],
+                ids=[id],
+                metadatas=[metadata or {}],
+            )
+        except Exception:
+            if self._fallback is None:
+                self._fallback = LocalVectorStore()
+            self._fallback.add(id, vector, metadata)
+
+    def search(self, query_vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
+        """Search ChromaDB or fallback store."""
+        if self._fallback is not None:
+            return self._fallback.search(query_vector, top_k)
+        try:
+            results = self._collection.query(
+                query_embeddings=[query_vector],
+                n_results=top_k,
+            )
+            out = []
+            for i, vec_id in enumerate(results.get("ids", [[]])[0]):
+                out.append({
+                    "id": vec_id,
+                    "score": 1.0 - (results.get("distances", [[]])[0][i] if results.get("distances") else 0.0),
+                    "metadata": results.get("metadatas", [[]])[0][i] if results.get("metadatas") else {},
+                })
+            return out
+        except Exception:
+            if self._fallback is None:
+                self._fallback = LocalVectorStore()
+            return self._fallback.search(query_vector, top_k)
+
+    def delete(self, id: str) -> bool:
+        """Delete from ChromaDB or fallback store."""
+        if self._fallback is not None:
+            return self._fallback.delete(id)
+        try:
+            self._collection.delete(ids=[id])
+            return True
+        except Exception:
+            return False
+
+
+def extract_entities(text: str) -> List[Dict[str, str]]:
+    """Extract entities from text using regex patterns.
+
+    Detects: EMAIL, URL, DATE (YYYY-MM-DD), PHONE, MENTION (@word), HASHTAG (#word).
+
+    Args:
+        text: Input text to analyse.
+
+    Returns:
+        List of dicts, each with "type" and "value" keys.
+    """
+    entities: List[Dict[str, str]] = []
+
+    # EMAIL
+    for m in re.finditer(r"\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b", text):
+        entities.append({"type": "EMAIL", "value": m.group()})
+
+    # URL
+    for m in re.finditer(r"https?://[^\s\"'>]+", text):
+        entities.append({"type": "URL", "value": m.group()})
+
+    # DATE (YYYY-MM-DD)
+    for m in re.finditer(r"\b\d{4}-\d{2}-\d{2}\b", text):
+        entities.append({"type": "DATE", "value": m.group()})
+
+    # PHONE (various formats)
+    for m in re.finditer(r"\b(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]\d{3}[-.\s]\d{4}\b", text):
+        entities.append({"type": "PHONE", "value": m.group()})
+
+    # MENTION (@word)
+    for m in re.finditer(r"@[A-Za-z0-9_]+", text):
+        entities.append({"type": "MENTION", "value": m.group()})
+
+    # HASHTAG (#word)
+    for m in re.finditer(r"#[A-Za-z0-9_]+", text):
+        entities.append({"type": "HASHTAG", "value": m.group()})
+
+    return entities
+
+
+class RetentionPolicy:
+    """Time-to-live retention policy for memory items.
+
+    Items older than ttl_seconds are considered expired.
+    """
+
+    def __init__(self, ttl_seconds: float = 86400.0) -> None:
+        """Initialize the retention policy.
+
+        Args:
+            ttl_seconds: Number of seconds before an item is considered expired.
+                Default is 86400 (24 hours).
+        """
+        self._ttl = ttl_seconds
+
+    def is_expired(self, item: "MemoryItem") -> bool:
+        """Check whether a memory item has exceeded its TTL.
+
+        Args:
+            item: MemoryItem to check.
+
+        Returns:
+            True if the item is expired, False otherwise.
+        """
+        return (time.time() - item.timestamp) > self._ttl
+
+    def apply(self, items: "List[MemoryItem]") -> "List[MemoryItem]":
+        """Filter out expired items.
+
+        Args:
+            items: List of MemoryItem objects.
+
+        Returns:
+            List of non-expired MemoryItem objects.
+        """
+        return [item for item in items if not self.is_expired(item)]
 
 
 @dataclass
@@ -327,13 +590,22 @@ class MemoryEngine:
     Coordinates short-term, episodic, symbolic, and semantic memory tiers.
     """
 
-    def __init__(self, policy: Optional[MemoryRetrievalPolicy] = None) -> None:
+    def __init__(
+        self,
+        policy: Optional[MemoryRetrievalPolicy] = None,
+        privacy_tier: PrivacyTier = PrivacyTier.SESSION,
+        user_id: str = "default",
+    ) -> None:
         """Initialize the memory engine with all tiers.
 
         Args:
             policy: Optional retrieval policy weights.
+            privacy_tier: Privacy tier for new memory items (stored as attribute).
+            user_id: User identifier for namespacing (stored as attribute).
         """
         self.policy = policy or MemoryRetrievalPolicy()
+        self.privacy_tier = privacy_tier
+        self.user_id = user_id
         self.short_term = ShortTermMemory()
         self.episodic = EpisodicMemory()
         self.symbolic = SymbolicMemory()
@@ -442,6 +714,74 @@ class MemoryEngine:
             removed = True
 
         return removed
+
+
+class UserMemoryScope:
+    """Per-user scoped memory with privacy tier support.
+
+    Each UserMemoryScope maintains a completely isolated MemoryEngine instance,
+    ensuring no cross-user contamination.
+    """
+
+    def __init__(
+        self,
+        user_id: str,
+        privacy_tier: PrivacyTier = PrivacyTier.SESSION,
+    ) -> None:
+        """Initialize a scoped memory for a specific user.
+
+        Args:
+            user_id: Unique identifier for the user. Used for namespace isolation.
+            privacy_tier: Privacy tier controlling persistence behaviour.
+        """
+        self._user_id = user_id
+        self._privacy_tier = privacy_tier
+        self._engine = MemoryEngine(user_id=user_id, privacy_tier=privacy_tier)
+        self._ephemeral_ids: List[str] = []
+
+    def store(self, content: str, tags: Optional[List[str]] = None) -> str:
+        """Store content in the user's scoped memory.
+
+        Args:
+            content: Text content to store.
+            tags: Optional list of tags.
+
+        Returns:
+            Generated item ID string.
+        """
+        item_id = self._engine.store(
+            content,
+            tags=tags,
+            namespace=self._user_id,
+        )
+        if self._privacy_tier == PrivacyTier.EPHEMERAL:
+            self._ephemeral_ids.append(item_id)
+        return item_id
+
+    def retrieve(self, query: str, top_k: int = 5) -> List[MemoryItem]:
+        """Retrieve memories relevant to the query from this user's scope only.
+
+        Args:
+            query: Query string.
+            top_k: Number of results.
+
+        Returns:
+            List of MemoryItem objects from this user's namespace only.
+        """
+        return self._engine.retrieve(query, top_k=top_k, namespace=self._user_id)
+
+    def clear_ephemeral(self) -> int:
+        """Clear all EPHEMERAL-tier memory items.
+
+        Returns:
+            Number of items cleared.
+        """
+        count = 0
+        for item_id in list(self._ephemeral_ids):
+            if self._engine.forget(item_id):
+                count += 1
+        self._ephemeral_ids = []
+        return count
 
 
 # ---------------------------------------------------------------------------
