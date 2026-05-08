@@ -9,6 +9,11 @@ from .logging_utils import setup_logging
 
 logger = setup_logging()
 
+try:
+    from .llama_cli_backend import LlamaCliBackend
+except ImportError:
+    LlamaCliBackend = None
+
 
 @dataclass
 class SamplingConfig:
@@ -123,6 +128,7 @@ class BackendResolver(object):
     def __init__(self):
         self._vllm = VLLMBackend()
         self._llama_cpp = LlamaCppBackend()
+        self._llama_cli = LlamaCliBackend() if LlamaCliBackend is not None else None
         self._fallback = RealAIFallbackBackend()
 
     def select_backend(self, backend_hint: str):
@@ -131,10 +137,15 @@ class BackendResolver(object):
             return self._vllm
         if hint in ('llama.cpp', 'llamacpp') and self._llama_cpp.available():
             return self._llama_cpp
+        if hint in ('llama-cli', 'llamacli') and self._llama_cli and self._llama_cli.available():
+            return self._llama_cli
+        # Auto-select best available backend
         if self._vllm.available():
             return self._vllm
         if self._llama_cpp.available():
             return self._llama_cpp
+        if self._llama_cli and self._llama_cli.available():
+            return self._llama_cli
         return self._fallback
 
     def generate(self, backend_hint: str, model_path: str, prompt: str, sampling: SamplingConfig):
