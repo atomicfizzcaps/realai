@@ -8,15 +8,21 @@ except ImportError:  # pragma: no cover
     requests = None
 
 from core.tools.base import Tool
+from core.tools.permissions import Permissions
 
 
 class WebSearchTool(Tool):
     name = "web_search"
     description = "Search the web"
     params_schema = {"query": {"type": "string"}}
-    permissions = ["network"]
+    permissions = [Permissions.NETWORK]
 
     def __call__(self, **kwargs: Any) -> Dict[str, Any]:
+        context = kwargs.get("_context") if isinstance(kwargs.get("_context"), dict) else {}
+        if context:
+            allowed = set(context.get("allowed_permissions", []))
+            if Permissions.NETWORK not in allowed:
+                raise PermissionError("Network access denied")
         query = str(kwargs.get("query", "")).strip()
         if not query:
             return {"results": [], "query": query}
@@ -33,4 +39,3 @@ class WebSearchTool(Tool):
             return {"results": [text], "query": query}
         except Exception as exc:
             return {"results": [], "query": query, "error": str(exc)}
-

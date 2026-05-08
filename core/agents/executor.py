@@ -2,13 +2,16 @@
 
 from typing import Any, Dict, List
 
+from core.agents.safety import AgentSafety
+
 
 class TaskExecutor:
-    def __init__(self, planner, worker, critic, synthesizer):
+    def __init__(self, planner, worker, critic, synthesizer, safety: AgentSafety = None):
         self.planner = planner
         self.worker = worker
         self.critic = critic
         self.synthesizer = synthesizer
+        self.safety = safety or AgentSafety()
 
     def run(self, messages, context):
         plan_data = self.planner.step(messages, context)
@@ -18,7 +21,8 @@ class TaskExecutor:
         context["plan"] = steps
 
         results: List[Dict[str, Any]] = []
-        for step in steps:
+        for index, step in enumerate(steps, start=1):
+            self.safety.validate_step(index)
             context["current_step"] = step
             worker_out = self.worker.step(messages, context)
             results.append({"step": step, "worker": worker_out})
@@ -34,4 +38,3 @@ class TaskExecutor:
             "results": results,
             "final": final.get("final", ""),
         }
-
