@@ -616,6 +616,147 @@ Run the test suite:
 python test_realai.py
 ```
 
+## New Endpoints (v2.1)
+
+The following endpoints are planned/implemented for RealAI v2.1:
+
+### POST /v1/multi-agent/run
+
+Run a multi-agent pipeline over a task.
+
+**Request:**
+```json
+{
+  "task": "Analyze market trends for electric vehicles",
+  "context": {"domain": "automotive"},
+  "model": "realai-2.0"
+}
+```
+
+**Response:**
+```json
+{
+  "status": "success",
+  "task": "...",
+  "stage_outputs": {
+    "planner": "...",
+    "researcher": "...",
+    "critic": "...",
+    "executor": "...",
+    "synthesizer": "..."
+  },
+  "final_synthesis": "...",
+  "duration_ms": 1234.5
+}
+```
+
+### POST /v1/router/select
+
+Select the optimal provider for a task.
+
+**Request:**
+```json
+{
+  "task_type": "chat",
+  "available_providers": ["openai", "anthropic", "local"]
+}
+```
+
+**Response:**
+```json
+{
+  "selected_provider": "openai",
+  "scores": [...]
+}
+```
+
+### GET /v1/audit/events
+
+Retrieve recent audit log events.
+
+**Query params:** `limit` (default: 100)
+
+**Response:**
+```json
+{
+  "events": [
+    {
+      "event_id": "...",
+      "timestamp": 1234567890.0,
+      "user_id": "user1",
+      "action_type": "chat",
+      "status": "success",
+      "duration_ms": 120.0
+    }
+  ]
+}
+```
+
+### POST /v1/memory/store
+
+Store a memory item for a user.
+
+**Request:**
+```json
+{
+  "user_id": "user1",
+  "content": "User prefers formal language",
+  "tags": ["preference"],
+  "privacy_tier": "session"
+}
+```
+
+**Response:**
+```json
+{"status": "success", "item_id": "uuid-..."}
+```
+
+### GET /v1/memory/retrieve
+
+Retrieve relevant memories for a user.
+
+**Query params:** `user_id`, `query`, `top_k` (default: 5)
+
+**Response:**
+```json
+{
+  "status": "success",
+  "memories": [
+    {"id": "...", "content": "...", "score": 0.9}
+  ]
+}
+```
+
+### POST /v1/consent/grant
+
+Grant consent for a user+scope pair.
+
+**Request:**
+```json
+{"user_id": "user1", "scope": "memory"}
+```
+
+**Response:**
+```json
+{"status": "success"}
+```
+
+### GET /v1/observability/stats
+
+Get system observability metrics.
+
+**Response:**
+```json
+{
+  "total_requests": 1234,
+  "error_rate": 0.02,
+  "avg_latency_ms": 145.3,
+  "token_usage": 567890,
+  "cost_estimate": 1.23,
+  "top_providers": {"openai": 800, "anthropic": 434}
+}
+```
+
 ## License
 
 MIT License - See [LICENSE](LICENSE) file for details.
